@@ -1,60 +1,120 @@
-import { cn } from '@/lib/utils';
+import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+
+type Color = 'green' | 'blue' | 'amber' | 'purple' | 'red';
 
 interface StatsCardProps {
   title: string;
   value: string;
   subtitle?: string;
-  icon: React.ReactNode;
-  color: 'green' | 'blue' | 'amber' | 'purple' | 'red';
-  trend?: { value: number; label: string };
+  icon?: React.ReactNode;
+  color?: Color;
+  trend?: number; // positive or negative percentage
 }
 
-const colorMap = {
-  green: {
-    bg: 'bg-green-50',
-    icon: 'bg-green-100 text-green-600',
-    trend: 'text-green-600',
-  },
-  blue: {
-    bg: 'bg-blue-50',
-    icon: 'bg-blue-100 text-blue-600',
-    trend: 'text-blue-600',
-  },
-  amber: {
-    bg: 'bg-amber-50',
-    icon: 'bg-amber-100 text-amber-600',
-    trend: 'text-amber-600',
-  },
-  purple: {
-    bg: 'bg-purple-50',
-    icon: 'bg-purple-100 text-purple-600',
-    trend: 'text-purple-600',
-  },
-  red: {
-    bg: 'bg-red-50',
-    icon: 'bg-red-100 text-red-600',
-    trend: 'text-red-600',
-  },
+const COLOR_MAP: Record<Color, { icon_bg: string; icon_border: string; icon_color: string; badge_bg: string; badge_color: string }> = {
+  green:  { icon_bg: '#f0fdf4', icon_border: '#bbf7d0', icon_color: '#16a34a', badge_bg: '#f0fdf4', badge_color: '#16a34a' },
+  blue:   { icon_bg: '#eff6ff', icon_border: '#bfdbfe', icon_color: '#2563eb', badge_bg: '#eff6ff', badge_color: '#2563eb' },
+  amber:  { icon_bg: '#fffbeb', icon_border: '#fde68a', icon_color: '#d97706', badge_bg: '#fffbeb', badge_color: '#d97706' },
+  purple: { icon_bg: '#faf5ff', icon_border: '#e9d5ff', icon_color: '#7c3aed', badge_bg: '#faf5ff', badge_color: '#7c3aed' },
+  red:    { icon_bg: '#fef2f2', icon_border: '#fecaca', icon_color: '#dc2626', badge_bg: '#fef2f2', badge_color: '#dc2626' },
 };
 
-export function StatsCard({ title, value, subtitle, icon, color, trend }: StatsCardProps) {
-  const colors = colorMap[color];
+export function StatsCard({ title, value, subtitle, icon, color = 'green', trend }: StatsCardProps) {
+  const c = COLOR_MAP[color];
+  const trendUp = trend !== undefined && trend >= 0;
 
   return (
-    <div className={cn('rounded-2xl p-5 border border-gray-100 bg-white shadow-sm')}>
-      <div className="flex items-start justify-between mb-4">
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', colors.icon)}>
-          {icon}
+    <>
+      <style>{`
+        .sc-card {
+          background: #fff;
+          border: 1px solid #e5e7eb;
+          border-radius: 14px;
+          padding: 20px 22px;
+          transition: box-shadow 0.2s, transform 0.2s;
+          font-family: 'DM Sans', -apple-system, sans-serif;
+        }
+        .sc-card:hover {
+          box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+          transform: translateY(-2px);
+        }
+        .sc-top {
+          display: flex; align-items: flex-start;
+          justify-content: space-between; margin-bottom: 14px;
+        }
+        .sc-icon-wrap {
+          width: 40px; height: 40px; border-radius: 10px;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .sc-trend {
+          display: inline-flex; align-items: center; gap: 3px;
+          font-size: 11px; font-weight: 700;
+          border-radius: 100px; padding: 3px 8px;
+        }
+        .sc-label {
+          font-size: 11.5px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.08em;
+          color: #9ca3af; margin-bottom: 4px;
+        }
+        .sc-value {
+          font-size: 26px; font-weight: 800; color: #111;
+          letter-spacing: -0.04em; line-height: 1.1;
+          margin-bottom: 6px;
+        }
+        .sc-subtitle {
+          font-size: 12.5px; color: #9ca3af;
+          display: flex; align-items: center; gap: 4px;
+        }
+      `}</style>
+
+      <div className="sc-card">
+        <div className="sc-top">
+          {icon && (
+            <div
+              className="sc-icon-wrap"
+              style={{ background: c.icon_bg, border: `1px solid ${c.icon_border}` }}
+            >
+              <span style={{ color: c.icon_color }}>{icon}</span>
+            </div>
+          )}
+          {trend !== undefined && (
+            <span
+              className="sc-trend"
+              style={{
+                background: trendUp ? '#f0fdf4' : '#fef2f2',
+                color: trendUp ? '#16a34a' : '#dc2626',
+              }}
+            >
+              {trendUp
+                ? <ArrowUpRight size={11} />
+                : <ArrowDownRight size={11} />
+              }
+              {Math.abs(trend)}%
+            </span>
+          )}
         </div>
-        {trend && (
-          <span className={cn('text-xs font-medium px-2 py-1 rounded-full bg-gray-50', colors.trend)}>
-            {trend.value > 0 ? '↑' : '↓'} {Math.abs(trend.value)}% {trend.label}
-          </span>
+
+        <div className="sc-label">{title}</div>
+        <div className="sc-value">{value}</div>
+
+        {subtitle && (
+          <div className="sc-subtitle">
+            <span
+              style={{
+                background: c.badge_bg,
+                color: c.badge_color,
+                borderRadius: 100,
+                padding: '2px 8px',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              {subtitle}
+            </span>
+          </div>
         )}
       </div>
-      <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
-    </div>
+    </>
   );
 }
