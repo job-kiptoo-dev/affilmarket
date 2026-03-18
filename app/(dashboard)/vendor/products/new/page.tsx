@@ -26,8 +26,10 @@ async function getFormData(userId: string) {
 }
 
 export default async function NewProductPage() {
+
+  const allowedRoles = ['VENDOR', 'BOTH', 'ADMIN'];
   const auth = await getAuthUser();
-  if (!auth || !['VENDOR', 'BOTH', 'ADMIN'].includes(auth.role)) {
+  if (!auth || !allowedRoles .includes(auth.role)) {
     redirect('/login');
   }
 
@@ -37,12 +39,7 @@ export default async function NewProductPage() {
   return (
     <DashboardShell role="VENDOR" vendorName={data.vendor.shopName}>
       <NewProductForm
-        categories={data.categories.map((c) => ({
-          id:       c.id,
-          name:     c.name,
-          slug:     c.slug,
-          children: c.children,
-        }))}
+        categories={data.categories}
       />
     </DashboardShell>
   );

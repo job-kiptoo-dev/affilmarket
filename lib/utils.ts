@@ -1,7 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import slugify from 'slugify';
-import { prisma } from './prisma';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,27 +24,7 @@ export function formatDate(date: Date | string): string {
 }
 
 export function generateSlug(title: string): string {
-  return slugify(title, {
-    lower: true,
-    strict: true,
-    trim: true,
-  });
-}
-
-export async function generateUniqueSlug(title: string, model: 'product' | 'category'): Promise<string> {
-  const base = generateSlug(title);
-  let slug = base;
-  let counter = 1;
-
-  while (true) {
-    const exists =
-      model === 'product'
-        ? await prisma.product.findUnique({ where: { slug } })
-        : await prisma.category.findUnique({ where: { slug } });
-
-    if (!exists) return slug;
-    slug = `${base}-${counter++}`;
-  }
+  return slugify(title, { lower: true, strict: true, trim: true });
 }
 
 export function generateAffiliateToken(): string {
@@ -65,14 +44,7 @@ export function generateVerificationToken(): string {
 
 export function paginationMeta(total: number, page: number, limit: number) {
   const totalPages = Math.ceil(total / limit);
-  return {
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNext: page < totalPages,
-    hasPrev: page > 1,
-  };
+  return { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 };
 }
 
 export function buildAffiliateLink(productSlug: string, affiliateToken: string): string {
@@ -85,10 +57,5 @@ export function truncate(str: string, length: number): string {
 }
 
 export function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 }

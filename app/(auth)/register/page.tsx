@@ -10,6 +10,8 @@ import { RegisterSchema } from '@/lib/schemas';
 import { useAuthStore } from '@/store/auth';
 import { Eye, EyeOff, ShoppingBag, Loader2, Store, Link2, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { registerUser } from '@/action/registerAction';
+// import { registerUser } from '@/lib/actions/auth';
 
 type RegisterForm = z.infer<typeof RegisterSchema>;
 
@@ -19,7 +21,6 @@ const roleOptions = [
     label: 'Vendor',
     description: 'List products and sell to customers',
     icon: Store,
-    color: 'border-green-200 bg-green-50 text-green-700',
     selectedColor: 'border-brand-green bg-brand-green-light ring-2 ring-brand-green/20',
   },
   {
@@ -27,7 +28,6 @@ const roleOptions = [
     label: 'Affiliate',
     description: 'Promote products and earn commissions',
     icon: Link2,
-    color: 'border-amber-200 bg-amber-50 text-amber-700',
     selectedColor: 'border-amber-500 bg-amber-50 ring-2 ring-amber-200',
   },
   {
@@ -35,7 +35,6 @@ const roleOptions = [
     label: 'Both',
     description: 'Sell and earn commissions',
     icon: Layers,
-    color: 'border-purple-200 bg-purple-50 text-purple-700',
     selectedColor: 'border-purple-500 bg-purple-50 ring-2 ring-purple-200',
   },
 ];
@@ -64,26 +63,16 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterForm) => {
     setServerError('');
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const json = await res.json();
+    const result = await registerUser(data);
 
-      if (!res.ok) {
-        setServerError(json.error || 'Registration failed');
-        return;
-      }
-
-      await fetchUser();
-      const role = json.user.role;
-      if (role === 'AFFILIATE') router.push('/affiliate');
-      else router.push('/vendor');
-    } catch {
-      setServerError('Something went wrong. Please try again.');
+    if (result.error) {
+      setServerError(result.error);
+      return;
     }
+
+    await fetchUser();
+    if (result.role === 'AFFILIATE') router.push('/affiliate');
+    else router.push('/vendor');
   };
 
   return (
@@ -118,9 +107,7 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             {/* Role Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                I want to...
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">I want to...</label>
               <div className="grid grid-cols-3 gap-3">
                 {roleOptions.map((opt) => (
                   <button
@@ -138,9 +125,7 @@ export default function RegisterPage() {
                   </button>
                 ))}
               </div>
-              {errors.role && (
-                <p className="mt-1 text-xs text-red-500">{errors.role.message}</p>
-              )}
+              {errors.role && <p className="mt-1 text-xs text-red-500">{errors.role.message}</p>}
             </div>
 
             <div>
@@ -151,9 +136,7 @@ export default function RegisterPage() {
                 placeholder="Jane Muthoni"
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green/20 focus:border-brand-green transition-all"
               />
-              {errors.fullName && (
-                <p className="mt-1 text-xs text-red-500">{errors.fullName.message}</p>
-              )}
+              {errors.fullName && <p className="mt-1 text-xs text-red-500">{errors.fullName.message}</p>}
             </div>
 
             <div>
@@ -164,9 +147,7 @@ export default function RegisterPage() {
                 placeholder="you@example.com"
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green/20 focus:border-brand-green transition-all"
               />
-              {errors.email && (
-                <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>
-              )}
+              {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
             </div>
 
             <div>
@@ -177,9 +158,7 @@ export default function RegisterPage() {
                 placeholder="+254712345678"
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green/20 focus:border-brand-green transition-all"
               />
-              {errors.phone && (
-                <p className="mt-1 text-xs text-red-500">{errors.phone.message}</p>
-              )}
+              {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone.message}</p>}
             </div>
 
             <div>
@@ -199,9 +178,7 @@ export default function RegisterPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              {errors.password && (
-                <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>
-              )}
+              {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>}
             </div>
 
             <button

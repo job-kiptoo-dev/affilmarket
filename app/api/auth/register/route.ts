@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
+import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { RegisterSchema } from '@/lib/schemas';
-import { signAccessToken, signRefreshToken, setAuthCookies } from '@/lib/auth';
-import { generateAffiliateToken, generateVerificationToken } from '@/lib/utils';
-import { Role, UserStatus } from '@prisma/client';
+import { generateAffiliateToken } from '@/lib/utils';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,90 +17,67 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password, phone, role, fullName } = parsed.data;
+    const name = fullName || email.split('@')[0];
 
-    // Check existing user
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Create verification token
-    const verifyToken = generateVerificationToken();
-    const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-
-    // Build create payload based on role
-    const userData: any = {
-      email,
-      passwordHash,
-      phone,
-      role: role as Role,
-      status: UserStatus.pending_verification,
-      balance: { create: {} },
-      verificationTokens: {
-        create: {
-          token: verifyToken,
-          expiresAt: verifyExpiry,
-        },
-      },
-    };
-
-    if (role === 'VENDOR' || role === 'BOTH') {
-      userData.vendorProfile = {
-        create: {
-          shopName: fullName || email.split('@')[0],
-          phone,
-          status: 'pending',
-        },
-      };
-    }
-
-    if (role === 'AFFILIATE' || role === 'BOTH') {
-      userData.affiliateProfile = {
-        create: {
-          fullName: fullName || email.split('@')[0],
-          phone,
-          affiliateToken: generateAffiliateToken(),
-          mpesaPhone: phone,
-          status: 'pending',
-        },
-      };
-    }
-
-    const user = await prisma.user.create({ data: userData });
-
-    // TODO: Send verification email via Resend
-    // await sendVerificationEmail(email, verifyToken);
-
-    // Auto-login after registration
-    const [accessToken, refreshToken] = await Promise.all([
-      signAccessToken({ sub: user.id, email: user.email, role: user.role }),
-      signRefreshToken(user.id),
-    ]);
-
-    // Store refresh token
-    await prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    const cookies = setAuthCookies(accessToken, refreshToken);
-    const response = NextResponse.json(
+    // Use Better Auth's internal handler to create the user + account record
+    const signUpRequest = new Request(
+      new URL('/api/auth/sign-up/email', req.url),
       {
-        message: 'Account created successfully',
-        user: { id: user.id, email: user.email, role: user.role },
-      },
-      { status: 201 }
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, role, phone }),
+      }
     );
 
-    response.cookies.set(cookies.accessToken.name, cookies.accessToken.value, cookies.accessToken.options);
-    response.cookies.set(cookies.refreshToken.name, cookies.refreshToken.value, cookies.refreshToken.options);
+    const authResponse = await auth.handler(signUpRequest);
 
-    return response;
+    if (!authResponse.ok) {
+      const err = await authResponse.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: err.message || 'Registration failed' },
+        { status: authResponse.status }
+      );
+    }
+
+    // Get the newly created user to build profiles
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found after creation' }, { status: 500 });
+    }
+
+    // Create balance + profiles in parallel (same as before)
+    await Promise.all([
+      prisma.balance.create({ data: { userId: user.id } }),
+
+      ...(role === 'VENDOR' || role === 'BOTH'
+        ? [prisma.vendorProfile.create({
+            data: { userId: user.id, shopName: name, phone, status: 'pending' },
+          })]
+        : []),
+
+      ...(role === 'AFFILIATE' || role === 'BOTH'
+        ? [prisma.affiliateProfile.create({
+            data: {
+              userId: user.id,
+              fullName: name,
+              phone,
+              affiliateToken: generateAffiliateToken(),
+              mpesaPhone: phone,
+              status: 'pending',
+            },
+          })]
+        : []),
+    ]);
+
+    // TODO: sendVerificationEmail(email, token);
+
+    // Return Better Auth's response — it already contains the session cookie
+    return authResponse;
   } catch (error) {
     console.error('Register error:', error);
     return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
