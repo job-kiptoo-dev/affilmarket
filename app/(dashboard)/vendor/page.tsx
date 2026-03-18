@@ -1,7 +1,12 @@
 import { redirect }         from 'next/navigation';
 import Link                  from 'next/link';
-import { getAuthUser }       from '@/lib/auth-server';
-import { prisma }            from '@/lib/prisma';
+import { getAuthUser }       from '@/lib/healpers/auth-server';
+import { db }                from '@/lib/utils/db';
+import {
+  vendorProfiles, orders as ordersTable, balances,
+  products as productsTable,
+} from '@/drizzle/schema';
+import { eq, desc, gte, and, sql } from 'drizzle-orm';
 import { DashboardShell }    from '@/components/dashboard/dashboard-shell';
 import { StatsCard }         from '@/components/dashboard/stats-card';
 import { SalesChart }        from '@/components/charts/sales-chart';
@@ -11,86 +16,110 @@ import {
   Plus, Eye, ArrowUpRight,
 } from 'lucide-react';
 
-/* ── helpers ─────────────────────────────────────────────────────────────── */
 function fmt(n: number) {
   return `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 0 })}`;
 }
 
-/* ── data fetch ──────────────────────────────────────────────────────────── */
 async function getVendorData(userId: string) {
-  const vendor = await prisma.vendorProfile.findUnique({
-    where: { userId },
-    include: { _count: { select: { products: true } } },
-  });
-  if (!vendor) return null;
+  const vendor = await db
+    .select({ id: vendorProfiles.id, shopName: vendorProfiles.shopName })
+    .from(vendorProfiles)
+    .where(eq(vendorProfiles.userId, userId))
+    .limit(1);
 
-  const [orders, balance, recentOrders, monthlySales] = await Promise.all([
-    /* order counts by status */
-    prisma.order.groupBy({
-      by:    ['orderStatus'],
-      where: { vendorId: vendor.id },
-      _count: true,
-      _sum:  { totalAmount: true },
-    }),
+  if (!vendor.length) return null;
+  const { id: vendorId, shopName } = vendor[0];
 
-    /* vendor balance */
-    prisma.balance.findUnique({ where: { userId } }),
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    /* 10 most recent orders */
-    prisma.order.findMany({
-      where:   { vendorId: vendor.id },
-      orderBy: { createdAt: 'desc' },
-      take:    10,
-      include: { product: { select: { title: true, mainImageUrl: true } } },
-    }),
+  const [allOrders, balance, recentOrders, productCount, monthlySales] = await Promise.all([
+    // all orders for aggregation
+    db.select({
+      orderStatus:   ordersTable.orderStatus,
+      paymentStatus: ordersTable.paymentStatus,
+      totalAmount:   ordersTable.totalAmount,
+    })
+      .from(ordersTable)
+      .where(eq(ordersTable.vendorId, vendorId)),
 
-    /* monthly revenue – last 6 months */
-    prisma.$queryRaw<{ month: string; revenue: number }[]>`
+    // balance
+    db.select()
+      .from(balances)
+      .where(eq(balances.userId, userId))
+      .limit(1),
+
+    // recent orders with product info
+    db.select({
+      id:            ordersTable.id,
+      customerName:  ordersTable.customerName,
+      totalAmount:   ordersTable.totalAmount,
+      orderStatus:   ordersTable.orderStatus,
+      paymentStatus: ordersTable.paymentStatus,
+      createdAt:     ordersTable.createdAt,
+      productTitle:  productsTable.title,
+      productImage:  productsTable.mainImageUrl,
+    })
+      .from(ordersTable)
+      .leftJoin(productsTable, eq(ordersTable.productId, productsTable.id))
+      .where(eq(ordersTable.vendorId, vendorId))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(10),
+
+    // product count
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(productsTable)
+      .where(eq(productsTable.vendorId, vendorId)),
+
+    // monthly revenue – raw SQL
+    db.execute(sql`
       SELECT
         TO_CHAR(created_at, 'Mon YYYY') AS month,
         SUM(vendor_earnings)::float      AS revenue
       FROM orders
-      WHERE vendor_id = ${vendor.id}
+      WHERE vendor_id    = ${vendorId}
         AND payment_status = 'PAID'
-        AND created_at >= NOW() - INTERVAL '6 months'
+        AND created_at   >= NOW() - INTERVAL '6 months'
       GROUP BY TO_CHAR(created_at, 'Mon YYYY'), DATE_TRUNC('month', created_at)
       ORDER BY DATE_TRUNC('month', created_at)
-    `,
+    `),
   ]);
 
-  /* aggregate totals */
   const paidStatuses = ['PAID', 'CONFIRMED', 'SHIPPED', 'DELIVERED'];
-  const totalRevenue = orders
-    .filter((g) => paidStatuses.includes(g.orderStatus))
-    .reduce((sum, g) => sum + (g._sum.totalAmount?.toNumber() ?? 0), 0);
+  const totalRevenue = allOrders
+    .filter((o) => paidStatuses.includes(o.orderStatus))
+    .reduce((sum, o) => sum + parseFloat(o.totalAmount ?? '0'), 0);
 
-  const totalOrders   = orders.reduce((s, g) => s + g._count, 0);
-  const pendingOrders = orders.find((g) => g.orderStatus === 'PAID')?._count ?? 0;
+  const totalOrders   = allOrders.length;
+  const pendingOrders = allOrders.filter((o) => o.orderStatus === 'PAID').length;
+  const bal           = balance[0];
 
   return {
-    vendor,
+    shopName,
     totalRevenue,
     totalOrders,
     pendingOrders,
-    productCount:      vendor._count.products,
-    pendingBalance:    balance?.pendingBalance.toNumber()   ?? 0,
-    availableBalance:  balance?.availableBalance.toNumber() ?? 0,
-    paidOutTotal:      balance?.paidOutTotal.toNumber()     ?? 0,
-    recentOrders:      recentOrders.map((o) => ({
-      id:             o.id,
-      productTitle:   o.product.title,
-      productImage:   o.product.mainImageUrl,
-      customerName:   o.customerName,
-      totalAmount:    o.totalAmount.toNumber(),
-      orderStatus:    o.orderStatus,
-      paymentStatus:  o.paymentStatus,
-      createdAt:      o.createdAt.toISOString(),
+    productCount:     productCount[0]?.count ?? 0,
+    pendingBalance:   parseFloat(bal?.pendingBalance   ?? '0'),
+    availableBalance: parseFloat(bal?.availableBalance ?? '0'),
+    paidOutTotal:     parseFloat(bal?.paidOutTotal     ?? '0'),
+    recentOrders: recentOrders.map((o) => ({
+      id:            o.id,
+      productTitle:  o.productTitle ?? '',
+      productImage:  o.productImage ?? null,
+      customerName:  o.customerName,
+      totalAmount:   parseFloat(o.totalAmount ?? '0'),
+      orderStatus:   o.orderStatus,
+      paymentStatus: o.paymentStatus,
+      createdAt:     o.createdAt.toISOString(),
     })),
-    monthlySales: monthlySales.map((r) => ({ month: r.month, revenue: r.revenue })),
+    monthlySales: (monthlySales as any[]).map((r) => ({
+      month:   r.month,
+      revenue: r.revenue,
+    })),
   };
 }
 
-/* ── page ────────────────────────────────────────────────────────────────── */
 export default async function VendorDashboardPage() {
   const auth = await getAuthUser();
   if (!auth || !['VENDOR', 'BOTH', 'ADMIN'].includes(auth.role)) redirect('/login');
@@ -98,12 +127,14 @@ export default async function VendorDashboardPage() {
   const data = await getVendorData(auth.sub);
   if (!data) redirect('/vendor/onboarding');
 
-  const { vendor, totalRevenue, totalOrders, pendingOrders, productCount,
-          pendingBalance, availableBalance, paidOutTotal,
-          recentOrders, monthlySales } = data;
+  const {
+    shopName, totalRevenue, totalOrders, pendingOrders, productCount,
+    pendingBalance, availableBalance, paidOutTotal,
+    recentOrders, monthlySales,
+  } = data;
 
   return (
-    <DashboardShell role="VENDOR" vendorName={vendor.shopName}>
+    <DashboardShell role="VENDOR" vendorName={shopName}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
         .vd { font-family: 'DM Sans', -apple-system, sans-serif; }
@@ -133,10 +164,9 @@ export default async function VendorDashboardPage() {
       `}</style>
 
       <div className="vd">
-        <h1 className="vd-title">Good morning, {vendor.shopName} 👋</h1>
+        <h1 className="vd-title">Good morning, {shopName} 👋</h1>
         <p className="vd-sub">Here's what's happening with your store today.</p>
 
-        {/* ── Alert banners ── */}
         {pendingOrders > 0 && (
           <div className="vd-banner" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
             <span style={{ fontSize: 13.5, color: '#92400e', fontWeight: 600 }}>
@@ -159,7 +189,6 @@ export default async function VendorDashboardPage() {
           </div>
         )}
 
-        {/* ── Quick actions ── */}
         <div className="vd-quick-actions">
           <Link href="/vendor/products/new" className="vd-qa primary"><Plus size={14} /> Add Product</Link>
           <Link href="/vendor/orders"       className="vd-qa"><ShoppingCart size={14} /> View Orders</Link>
@@ -167,48 +196,20 @@ export default async function VendorDashboardPage() {
           <Link href="/vendor/analytics"    className="vd-qa"><TrendingUp size={14} /> Analytics</Link>
         </div>
 
-        {/* ── Stat cards ── */}
         <div className="vd-grid4">
-          <StatsCard
-            title="Total Revenue"
-            value={fmt(totalRevenue)}
-            icon={<TrendingUp size={18} />}
-            color="green"
-            subtitle="All time"
-          />
-          <StatsCard
-            title="Total Orders"
-            value={totalOrders}
-            icon={<ShoppingCart size={18} />}
-            color="blue"
-            subtitle={`${pendingOrders} pending`}
-          />
-          <StatsCard
-            title="Pending Payout"
-            value={fmt(pendingBalance)}
-            icon={<Wallet size={18} />}
-            color="amber"
-            subtitle="Processing"
-          />
-          <StatsCard
-            title="Products Listed"
-            value={productCount}
-            icon={<Package size={18} />}
-            color="purple"
-            subtitle="Active listings"
-          />
+          <StatsCard title="Total Revenue"    value={fmt(totalRevenue)}    icon={<TrendingUp size={18} />}   color="green"  subtitle="All time" />
+          <StatsCard title="Total Orders"     value={totalOrders}          icon={<ShoppingCart size={18} />} color="blue"   subtitle={`${pendingOrders} pending`} />
+          <StatsCard title="Pending Payout"   value={fmt(pendingBalance)}  icon={<Wallet size={18} />}       color="amber"  subtitle="Processing" />
+          <StatsCard title="Products Listed"  value={productCount}         icon={<Package size={18} />}      color="purple" subtitle="Active listings" />
         </div>
 
-        {/* ── Balance cards ── */}
         <div className="vd-grid3">
-          {/* Pending */}
           <div className="vd-balance-card" style={{ background: '#111', border: 'none' }}>
             <div className="vd-balance-label" style={{ color: '#6b7280' }}>Pending Balance</div>
             <div className="vd-balance-value" style={{ color: '#fff' }}>{fmt(pendingBalance)}</div>
             <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>Waiting for order delivery</div>
           </div>
 
-          {/* Available */}
           <div className="vd-balance-card" style={{
             background: availableBalance > 0 ? '#f0fdf4' : '#f9fafb',
             border:     availableBalance > 0 ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
@@ -224,7 +225,6 @@ export default async function VendorDashboardPage() {
             )}
           </div>
 
-          {/* Paid out */}
           <div className="vd-balance-card" style={{ background: '#fff' }}>
             <div className="vd-balance-label">Total Paid Out</div>
             <div className="vd-balance-value">{fmt(paidOutTotal)}</div>
@@ -234,7 +234,6 @@ export default async function VendorDashboardPage() {
           </div>
         </div>
 
-        {/* ── Sales chart + Recent orders ── */}
         <div className="vd-grid2">
           <div className="vd-card">
             <div className="vd-card-head">
@@ -242,9 +241,7 @@ export default async function VendorDashboardPage() {
               <Link href="/vendor/analytics" className="vd-link"><Eye size={13} /> Full report</Link>
             </div>
             <div className="vd-card-body">
-              <SalesChart
-                data={monthlySales.map((m) => ({ name: m.month, value: m.revenue }))}
-              />
+              <SalesChart data={monthlySales.map((m) => ({ name: m.month, value: m.revenue }))} />
             </div>
           </div>
 
