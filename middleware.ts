@@ -43,57 +43,39 @@
 // };
 //
 
-import { NextResponse, type NextRequest } from "next/server";
-import { getSessionCookie } from "better-auth/cookies";
-
+import { NextResponse, type NextRequest } from 'next/server';
+import { getSessionCookie }               from 'better-auth/cookies';
 import {
-  apiAuthPrefix,
-  authRoutes,
-  DEFAULT_LOGIN_REDIRECT,
-  publicRoutes,
-} from "./routes";
+  apiAuthPrefix, authRoutes,
+  DEFAULT_LOGIN_REDIRECT, publicRoutes,
+} from './routes';
 
-export async function proxy(request: NextRequest) {
-  const session = getSessionCookie(request);
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-  const isApiAuth = request.nextUrl.pathname.startsWith(apiAuthPrefix);
+  // Always allow API auth routes
+  if (pathname.startsWith(apiAuthPrefix)) return NextResponse.next();
 
-  const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname);
+  const session    = getSessionCookie(request);
+  const isPublic   = publicRoutes.some(r => pathname === r || pathname.startsWith(r));
+  const isAuthPage = authRoutes.some(r => pathname.startsWith(r));
 
-  const isAuthRoute = () => {
-    return authRoutes.some((path) => request.nextUrl.pathname.startsWith(path));
-  };
-
-  if (isApiAuth) {
+  // On auth pages: if session cookie exists → go to dashboard
+  if (isAuthPage) {
+    if (session) return NextResponse.redirect(new URL(DEFAULT_LOGIN_REDIRECT, request.url));
     return NextResponse.next();
   }
 
-  if (isAuthRoute()) {
-    if (session) {
-      return NextResponse.redirect(
-        new URL(DEFAULT_LOGIN_REDIRECT, request.url),
-      );
-    }
-    return NextResponse.next();
-  }
-
-  if (!session && !isPublicRoute) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // On protected pages: if no session cookie → go to login
+  if (!session && !isPublic) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname); // preserve intended destination
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
-

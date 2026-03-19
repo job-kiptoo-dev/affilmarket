@@ -52,18 +52,19 @@ const ROLE_CONFIG: Record<Role, { label: string; color: string; bg: string; bord
 
 interface DashboardShellProps {
   children: React.ReactNode;
+    vendorName: string; 
   role: Role;
 }
 
-export function DashboardShell({ children, role }: DashboardShellProps) {
+export function DashboardShell({ children, role, vendorName }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
   const navItems = NAV_MAP[role] || NAV_MAP.AFFILIATE;
   const roleConf = ROLE_CONFIG[role];
 
-  const userInitials = user?.email ? user.email.slice(0, 2).toUpperCase() : 'U';
-  const userName = user?.email?.split('@')[0] || 'User';
+  const userName = vendorName || user?.name || user?.email?.split('@')[0] || 'User';
+  const userInitials = userName.slice(0, 2).toUpperCase();
 
   return (
     <>

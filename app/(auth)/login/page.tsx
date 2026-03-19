@@ -7,16 +7,17 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { LoginSchema } from '@/lib/schemas';
-import { useAuthStore } from '@/store/auth';
 import { Eye, EyeOff, ShoppingBag, Loader2 } from 'lucide-react';
-import { loginUser } from '@/action/loginAction';
-// import { loginUser } from '@/lib/actions/auth';
+// import { signIn } from '@/lib/auth-client';
+// import { db } from '@/lib/db'; // ← remove this, use an action just for role
+import { signIn } from '@/lib/utils/auth-client';
+import { useAuthStore } from '@/store/auth';
 
 type LoginForm = z.infer<typeof LoginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { fetchUser } = useAuthStore();
+    const { fetchUser } = useAuthStore();  // ← add this
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState('');
 
@@ -26,21 +27,29 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({ resolver: zodResolver(LoginSchema) });
 
-  const onSubmit = async (data: LoginForm) => {
-    setServerError('');
-    const result = await loginUser(data);
+ // import { signIn } from '@/lib/auth-client';
 
-    if (result.error) {
-      setServerError(result.error);
-      return;
-    }
+const onSubmit = async (data: LoginForm) => {
+  setServerError('');
 
-    await fetchUser();
+  const result = await signIn.email({
+    email:    data.email,
+    password: data.password,
+  });
 
-    if (result.role === 'ADMIN') router.push('/admin');
-    else if (result.role === 'AFFILIATE') router.push('/affiliate');
-    else router.push('/vendor');
-  };
+  if (result.error) {
+    setServerError(result.error.message ?? 'Login failed');
+    return;
+  }
+
+  const user = await fetchUser();
+
+  if (user?.role === 'ADMIN')          router.push('/admin');
+  else if (user?.role === 'AFFILIATE') router.push('/affiliate');
+  else                                 router.push('/vendor');
+};
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-950 to-green-800 flex items-center justify-center p-4">

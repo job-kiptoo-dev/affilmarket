@@ -7,6 +7,7 @@ import {
   Package, DollarSign, Image as ImageIcon,
   FileText, AlertCircle, CheckCircle, Loader2, WifiOff,
 } from 'lucide-react';
+import { createProduct } from '@/action/createProductAction';
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 interface SubCategory { id: string; name: string; slug: string; }
@@ -343,60 +344,109 @@ export function NewProductForm({ categories }: Props) {
       country:                 form.country,
     };
 
-    try {
-      const res = await fetch('/api/vendor/products', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-      });
+    // try {
+    //   const res = await fetch('/api/vendor/products', {
+    //     method:  'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body:    JSON.stringify(payload),
+    //   });
+    //
+    //   // Safely parse JSON — the server might return non-JSON on 5xx
+    //   let body: ApiErrorBody = null;
+    //   try {
+    //     body = await res.json() as ApiErrorBody;
+    //   } catch {
+    //     // Response wasn't JSON (e.g. nginx 502 HTML page)
+    //     body = null;
+    //   }
+    //
+    //   if (!res.ok) {
+    //     // Field-level validation errors from the server
+    //     const fieldErrors = parseApiIssues(body);
+    //     if (Object.keys(fieldErrors).length > 0) {
+    //       setErrors((prev) => ({ ...prev, ...fieldErrors }));
+    //     }
+    //
+    //     // Always set a form-level message so the user knows something went wrong
+    //     const formMsg = extractApiMessage(body, res.status);
+    //     setErrors((prev) => ({ ...prev, _form: formMsg }));
+    //     setSaveState('error');
+    //     return;
+    //   }
+    //
+    //   setSaveState('success');
+    //   setTimeout(() => router.push('/vendor/products'), 1200);
+    //
+    // } catch (err) {
+    //   // Network failure (DNS error, timeout, connection refused, etc.)
+    //   const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
+    //   if (isOffline) {
+    //     setOffline(true);
+    //     setErrors((prev) => ({
+    //       ...prev,
+    //       _form: 'No internet connection. Please check your network and try again.',
+    //     }));
+    //   } else {
+    //     setErrors((prev) => ({
+    //       ...prev,
+    //       _form: 'An unexpected error occurred. Please try again or contact support if the problem persists.',
+    //     }));
+    //   }
+    //   setSaveState('error');
+    //
+    // } finally {
+    //   setSaving(false);
+    // }
+    
 
-      // Safely parse JSON — the server might return non-JSON on 5xx
-      let body: ApiErrorBody = null;
-      try {
-        body = await res.json() as ApiErrorBody;
-      } catch {
-        // Response wasn't JSON (e.g. nginx 502 HTML page)
-        body = null;
+    // At top of file add:
+
+// Replace the entire try/catch in handleSubmit with:
+try {
+  const result = await createProduct(payload);
+
+  if (result.error) {
+    // Field-level issues
+    if ('issues' in result && result.issues) {
+      const fieldErrors = Object.fromEntries(
+        Object.entries(result.issues)
+          .filter(([, msgs]) => Array.isArray(msgs) && (msgs as string[]).length > 0)
+          .map(([k, msgs]) => [k, (msgs as string[])[0]])
+      ) as FieldError;
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors((prev) => ({ ...prev, ...fieldErrors }));
       }
-
-      if (!res.ok) {
-        // Field-level validation errors from the server
-        const fieldErrors = parseApiIssues(body);
-        if (Object.keys(fieldErrors).length > 0) {
-          setErrors((prev) => ({ ...prev, ...fieldErrors }));
-        }
-
-        // Always set a form-level message so the user knows something went wrong
-        const formMsg = extractApiMessage(body, res.status);
-        setErrors((prev) => ({ ...prev, _form: formMsg }));
-        setSaveState('error');
-        return;
-      }
-
-      setSaveState('success');
-      setTimeout(() => router.push('/vendor/products'), 1200);
-
-    } catch (err) {
-      // Network failure (DNS error, timeout, connection refused, etc.)
-      const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
-      if (isOffline) {
-        setOffline(true);
-        setErrors((prev) => ({
-          ...prev,
-          _form: 'No internet connection. Please check your network and try again.',
-        }));
-      } else {
-        setErrors((prev) => ({
-          ...prev,
-          _form: 'An unexpected error occurred. Please try again or contact support if the problem persists.',
-        }));
-      }
-      setSaveState('error');
-
-    } finally {
-      setSaving(false);
     }
-  };
+
+    // Status-based messages
+    let formMsg = result.error;
+    if (result.status === 401) formMsg = 'You must be logged in to add products.';
+    if (result.status === 403) formMsg = "You don't have permission to create products.";
+    if (result.status === 404) formMsg = 'Vendor profile not found. Please complete onboarding.';
+
+    setErrors((prev) => ({ ...prev, _form: formMsg }));
+    setSaveState('error');
+    return;
+  }
+
+  setSaveState('success');
+  setTimeout(() => router.push('/vendor/products'), 1200);
+
+} catch (err) {
+  const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
+  if (isOffline) {
+    setOffline(true);
+    setErrors((prev) => ({ ...prev, _form: 'No internet connection. Please check your network and try again.' }));
+  } else {
+    setErrors((prev) => ({ ...prev, _form: 'An unexpected error occurred. Please try again.' }));
+  }
+  setSaveState('error');
+} finally {
+  setSaving(false);
+}
+  }
+
+
 
   // ── Commission preview ─────────────────────────────────────────────────────
   const commPreview = form.price && !isNaN(Number(form.price)) && Number(form.price) > 0
