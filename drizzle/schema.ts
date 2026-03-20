@@ -173,9 +173,12 @@ export const orders = pgTable('orders', {
 });
 
 // ─── MPESA TRANSACTIONS ──────────────────────────────
+  
+
+
 export const mpesaTransactions = pgTable('mpesa_transactions', {
-  id:                uuid('id').primaryKey(),
-  orderId:           uuid('order_id').notNull().references(() => orders.id),
+  id:                uuid('id').primaryKey().defaultRandom(),
+  orderId:           uuid('order_id').references(() => orders.id), // ← remove .notNull()
   checkoutRequestId: text('checkout_request_id').unique(),
   merchantRequestId: text('merchant_request_id'),
   phoneNumber:       text('phone_number').notNull(),
@@ -185,9 +188,11 @@ export const mpesaTransactions = pgTable('mpesa_transactions', {
   resultCode:        integer('result_code'),
   resultDesc:        text('result_desc'),
   rawCallback:       json('raw_callback'),
+  checkoutMetadata:  json('checkout_metadata'), // ← add this
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
+
 
 // ─── AFFILIATE CLICKS ────────────────────────────────
 export const affiliateClicks = pgTable('affiliate_clicks', {

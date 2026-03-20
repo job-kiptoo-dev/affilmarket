@@ -15,6 +15,13 @@
       "when": 1773791804716,
       "tag": "0001_stale_odin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774009521150,
+      "tag": "0002_spicy_exiles",
+      "breakpoints": true
     }
   ]
 }

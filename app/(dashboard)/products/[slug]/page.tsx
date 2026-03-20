@@ -141,9 +141,25 @@ export default async function ProductPage({
               {product.shortDescription && (
                 <div className="pp-desc">{product.shortDescription}</div>
               )}
-              <button className="pp-buy-btn" style={{ marginTop: 20 }}>
-                <ShoppingBag size={16} /> Buy Now
-              </button>
+
+
+              // Replace the Buy Now button with:
+<Link
+  href={`/checkout/${product.slug}${aff ? `?aff=${aff}` : ''}`}
+  style={{
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    width: '100%', padding: '14px', background: '#16a34a', color: '#fff',
+    border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 800,
+    textDecoration: 'none', marginTop: 20, transition: 'background 0.2s',
+  }}
+>
+  <ShoppingBag size={16} /> Buy Now — {formatKES(price)}
+</Link>
+
+
+              {/* <button className="pp-buy-btn" style={{ marginTop: 20 }}> */}
+              {/*   <ShoppingBag size={16} /> Buy Now */}
+              {/* </button> */}
             </div>
 
             {/* Affiliate commission card — only show if aff token present */}
