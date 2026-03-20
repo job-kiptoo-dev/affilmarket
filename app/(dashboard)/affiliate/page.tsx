@@ -102,6 +102,7 @@ export default async function AffiliateDashboardPage() {
   const firstName = data.profile.fullName.split(' ')[0];
 
   return (
+    <>
     <DashboardShell role="AFFILIATE">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
@@ -360,5 +361,6 @@ export default async function AffiliateDashboardPage() {
         </div>
       </div>
     </DashboardShell>
+</>
   );
 }
