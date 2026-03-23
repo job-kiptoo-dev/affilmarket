@@ -1,10 +1,10 @@
 'use server';
-
 import { db }             from '@/lib/utils/db';
-import { orders, vendorProfiles, balances, affiliateProfiles } from '@/drizzle/schema';
+import { orders, vendorProfiles, balances, affiliateProfiles, products } from '@/drizzle/schema'; // ← add products
 import { eq, and, sql }   from 'drizzle-orm';
 import { getAuthUser }    from '@/lib/healpers/auth-server';
 import { revalidatePath } from 'next/cache';
+import { sendDeliveryConfirmationEmail } from '@/lib/resend'; // ← add this
 
 export async function updateOrderStatus(
   orderId:  string,
@@ -15,7 +15,6 @@ export async function updateOrderStatus(
     return { error: 'Unauthorized' };
   }
 
-  // Verify this order belongs to this vendor
   const vendor = await db
     .select({ id: vendorProfiles.id })
     .from(vendorProfiles)
@@ -38,10 +37,32 @@ export async function updateOrderStatus(
     .set({ orderStatus: status })
     .where(eq(orders.id, orderId));
 
+  // ── On SHIPPED: send delivery confirmation email ───────────────
+  if (status === 'SHIPPED' && o.customerEmail) {
+    const productInfo = await db
+      .select({ title: products.title })
+      .from(products)
+      .where(eq(products.id, o.productId))
+      .limit(1);
+
+    const vendorInfo = await db
+      .select({ shopName: vendorProfiles.shopName })
+      .from(vendorProfiles)
+      .where(eq(vendorProfiles.id, o.vendorId))
+      .limit(1);
+
+    // Non-blocking — don't fail the status update if email fails
+    sendDeliveryConfirmationEmail({
+      customerEmail: o.customerEmail,
+      customerName:  o.customerName,
+      productTitle:  productInfo[0]?.title   ?? 'Your order',
+      orderId,
+      shopName:      vendorInfo[0]?.shopName ?? 'AffilMarket Vendor',
+    }).catch(err => console.error('[updateOrderStatus] email failed:', err));
+  }
+
   // ── On DELIVERED: release pending balances ─────────────────────
   if (status === 'DELIVERED' && !o.balancesReleased && o.paymentStatus === 'PAID') {
-
-    // Move vendor pendingBalance → availableBalance
     if (o.vendorEarnings) {
       const vendorUser = await db
         .select({ userId: vendorProfiles.userId })
@@ -59,7 +80,6 @@ export async function updateOrderStatus(
       }
     }
 
-    // Move affiliate pendingBalance → availableBalance
     if (o.affiliateId && o.affiliateCommission) {
       const affUser = await db
         .select({ userId: affiliateProfiles.userId })
@@ -77,7 +97,6 @@ export async function updateOrderStatus(
       }
     }
 
-    // Mark balances as released
     await db.update(orders)
       .set({ balancesReleased: true })
       .where(eq(orders.id, orderId));

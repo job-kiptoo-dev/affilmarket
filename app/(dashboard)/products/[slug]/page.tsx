@@ -1,10 +1,12 @@
-import { db }             from '@/lib/utils/db';
-import { products, vendorProfiles, categories, reviews, orders } from '@/drizzle/schema';
-import { eq, sql }        from 'drizzle-orm';
+import { products, vendorProfiles, categories, affiliateProfiles, affiliateClicks } from '@/drizzle/schema';
+import { eq, gte, sql }        from 'drizzle-orm';
 import { notFound }       from 'next/navigation';
 import { formatKES }      from '@/lib/utils';
+import { headers, cookies } from 'next/headers';
 import Link               from 'next/link';
-import { ShoppingBag, Star, Store, Tag, ArrowLeft } from 'lucide-react';
+import { ShoppingBag, Store, Star } from 'lucide-react';
+import { db } from '@/lib/utils/db';
+import { resolveAffiliateId } from '@/lib/healpers/affiliate-utils';
 
 async function getProduct(slug: string) {
   const result = await db
@@ -24,12 +26,12 @@ async function getProduct(slug: string) {
       shopDescription:        vendorProfiles.description,
       logoUrl:                vendorProfiles.logoUrl,
       categoryName:           categories.name,
-      orderCount:             sql<number>`count(distinct ${orders.id})::int`,
+      orderCount:             sql<number>`count(distinct ${(await import('@/drizzle/schema')).orders.id})::int`,
     })
     .from(products)
     .leftJoin(vendorProfiles, eq(products.vendorId, vendorProfiles.id))
     .leftJoin(categories,     eq(products.categoryId, categories.id))
-    .leftJoin(orders,         eq(products.id, orders.productId))
+    .leftJoin((await import('@/drizzle/schema')).orders, eq(products.id, (await import('@/drizzle/schema')).orders.productId))
     .where(eq(products.slug, slug))
     .groupBy(
       products.id, vendorProfiles.shopName, vendorProfiles.description,
@@ -39,6 +41,56 @@ async function getProduct(slug: string) {
 
   return result[0] ?? null;
 }
+
+
+async function logAffiliateClick({
+  affiliateToken,
+  productId,
+  ipAddress,
+  userAgent,
+  referrer,
+}: {
+  affiliateToken: string;
+  productId:      string;
+  ipAddress:      string;
+  userAgent:      string;
+  referrer:       string;
+}) {
+
+  try {
+    const affiliateId = await resolveAffiliateId(affiliateToken);
+    if (!affiliateId) return; // invalid token — skip silently
+
+    // Dedup check
+    const recentClick = await db
+      .select({ id: affiliateClicks.id })
+      .from(affiliateClicks)
+      .where(
+        and(
+          eq(affiliateClicks.affiliateId, affiliateId),
+          eq(affiliateClicks.productId, productId),
+          eq(affiliateClicks.ipAddress, ipAddress),
+          gte(affiliateClicks.createdAt, new Date(Date.now() - 60 * 60 * 1000)),
+        )
+      )
+      .limit(1);
+
+    if (recentClick.length) return;
+
+    await db.insert(affiliateClicks).values({
+      id:          crypto.randomUUID(),
+      affiliateId,
+      productId,
+      ipAddress,
+      userAgent,
+      referrer,
+      cookieToken: `${affiliateToken}_${productId}_${ipAddress}`,
+    });
+  } catch (err) {
+    console.error('[logAffiliateClick]', err);
+  }
+}
+
 
 export default async function ProductPage({
   params,
@@ -53,11 +105,36 @@ export default async function ProductPage({
 
   if (!product) notFound();
 
+  // ── Log affiliate click ──────────────────────────────────────
+  if (aff) {
+    const headersList = await headers();
+    const cookieStore = await cookies();
+
+    const ipAddress = headersList.get('x-forwarded-for')
+      ?? headersList.get('x-real-ip')
+      ?? '0.0.0.0';
+    const userAgent = headersList.get('user-agent') ?? '';
+    const referrer  = headersList.get('referer')    ?? '';
+
+    // Deduplicate: only log once per affiliate+product per browser session
+    const cookieKey = `ac_${aff}_${product.id}`;
+    const alreadyLogged = cookieStore.get(cookieKey);
+
+    if (!alreadyLogged) {
+      await logAffiliateClick({
+        affiliateToken: aff,
+        productId:      product.id,
+        ipAddress,
+        userAgent,
+        referrer,
+      });
+    }
+  }
+
   const price      = parseFloat(product.price);
   const commRate   = parseFloat(product.affiliateCommissionRate);
   const commission = (price * commRate).toFixed(0);
-  const baseUrl    = process.env.NEXT_PUBLIC_APP_URL;
-  const affLink    = `${baseUrl}/products/${slug}${aff ? `?aff=${aff}` : ''}`;
+  const baseUrl    = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
   return (
     <>
@@ -79,38 +156,28 @@ export default async function ProductPage({
         .pp-price { font-size: 32px; font-weight: 800; color: #111; letter-spacing: -0.04em; margin-bottom: 4px; }
         .pp-stock { font-size: 13px; color: #16a34a; font-weight: 600; margin-bottom: 16px; }
         .pp-desc { font-size: 14px; color: #6b7280; line-height: 1.7; }
-        .pp-buy-btn {
-          width: 100%; padding: 14px; background: #16a34a; color: #fff;
-          border: none; border-radius: 12px; font-size: 15px; font-weight: 700;
-          cursor: pointer; font-family: 'DM Sans', sans-serif;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          transition: background 0.2s;
-        }
+        .pp-buy-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; background: #16a34a; color: #fff; border-radius: 12px; font-size: 15px; font-weight: 800; text-decoration: none; margin-top: 20px; transition: background 0.2s; }
         .pp-buy-btn:hover { background: #15803d; }
         .pp-comm-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 16px; padding: 20px; }
         .pp-comm-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #15803d; margin-bottom: 4px; }
         .pp-comm-amount { font-size: 28px; font-weight: 800; color: #16a34a; letter-spacing: -0.04em; }
-        .pp-comm-sub { font-size: 12.5px; color: #15803d; margin-top: 2px; }
-        .pp-aff-badge { background: #111; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+        .pp-aff-badge { background: #111; border-radius: 10px; padding: 12px 16px; margin-top: 12px; }
         .pp-aff-token { font-family: monospace; font-size: 13px; color: #4ade80; font-weight: 700; letter-spacing: 0.08em; }
-        .pp-aff-label { font-size: 11px; color: #6b7280; }
-        .pp-vendor-card { display: flex; align-items: center; gap: 14px; }
-        .pp-vendor-logo { width: 44px; height: 44px; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; overflow: hidden; }
-        .pp-vendor-name { font-size: 14px; font-weight: 700; color: #111; }
-        .pp-vendor-sub { font-size: 12px; color: #9ca3af; }
+        .pp-aff-label { font-size: 11px; color: #6b7280; margin-bottom: 3px; }
         .pp-stats { display: flex; gap: 16px; }
         .pp-stat { text-align: center; flex: 1; padding: 12px; background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb; }
         .pp-stat-val { font-size: 20px; font-weight: 800; color: #111; letter-spacing: -0.03em; }
         .pp-stat-label { font-size: 11px; color: #9ca3af; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+        .pp-vendor-card { display: flex; align-items: center; gap: 14px; }
+        .pp-vendor-logo { width: 44px; height: 44px; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+        .pp-vendor-name { font-size: 14px; font-weight: 700; color: #111; }
+        .pp-vendor-sub { font-size: 12px; color: #9ca3af; }
         @media (max-width: 800px) { .pp-body { grid-template-columns: 1fr; } }
       `}</style>
 
       <div className="pp">
-        {/* Navbar */}
         <nav className="pp-nav">
-          <Link href="/" className="pp-nav-logo">
-            <span>Affil</span>Market
-          </Link>
+          <Link href="/" className="pp-nav-logo"><span>Affil</span>Market</Link>
           <div style={{ flex: 1 }} />
           <Link href="/products" style={{ fontSize: 13, color: '#6b7280', textDecoration: 'none', fontWeight: 600 }}>
             ← Browse
@@ -118,7 +185,7 @@ export default async function ProductPage({
         </nav>
 
         <div className="pp-body">
-          {/* Left — Images */}
+          {/* Images */}
           <div className="pp-images">
             <div className="pp-main-img">
               {product.mainImageUrl
@@ -127,7 +194,7 @@ export default async function ProductPage({
             </div>
           </div>
 
-          {/* Right — Details */}
+          {/* Details */}
           <div className="pp-right">
             <div className="pp-card">
               {product.categoryName && (
@@ -136,43 +203,34 @@ export default async function ProductPage({
               <div className="pp-title">{product.title}</div>
               <div className="pp-price">{formatKES(price)}</div>
               <div className="pp-stock">
-                {product.stockQuantity > 0 ? `✓ ${product.stockQuantity} in stock` : '⚠ Out of stock'}
+                {product.stockQuantity > 0
+                  ? `✓ ${product.stockQuantity} in stock`
+                  : '⚠ Out of stock'}
               </div>
               {product.shortDescription && (
                 <div className="pp-desc">{product.shortDescription}</div>
               )}
-
-
-              // Replace the Buy Now button with:
-<Link
-  href={`/checkout/${product.slug}${aff ? `?aff=${aff}` : ''}`}
-  style={{
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    width: '100%', padding: '14px', background: '#16a34a', color: '#fff',
-    border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 800,
-    textDecoration: 'none', marginTop: 20, transition: 'background 0.2s',
-  }}
->
-  <ShoppingBag size={16} /> Buy Now — {formatKES(price)}
-</Link>
-
-
-              {/* <button className="pp-buy-btn" style={{ marginTop: 20 }}> */}
-              {/*   <ShoppingBag size={16} /> Buy Now */}
-              {/* </button> */}
+              {product.stockQuantity > 0 && (
+                <Link
+                  href={`/checkout/${product.slug}${aff ? `?aff=${aff}` : ''}`}
+                  className="pp-buy-btn"
+                >
+                  <ShoppingBag size={16} /> Buy Now — {formatKES(price)}
+                </Link>
+              )}
             </div>
 
-            {/* Affiliate commission card — only show if aff token present */}
+            {/* Affiliate commission card */}
             {aff && (
               <div className="pp-comm-card">
                 <div className="pp-comm-label">Your commission on this sale</div>
                 <div className="pp-comm-amount">+KES {commission}</div>
-                <div className="pp-comm-sub">{(commRate * 100).toFixed(0)}% of {formatKES(price)}</div>
-                <div className="pp-aff-badge" style={{ marginTop: 14 }}>
-                  <div>
-                    <div className="pp-aff-label">Tracking via token</div>
-                    <div className="pp-aff-token">{aff}</div>
-                  </div>
+                <div style={{ fontSize: 12, color: '#15803d', marginTop: 2 }}>
+                  {(commRate * 100).toFixed(0)}% of {formatKES(price)}
+                </div>
+                <div className="pp-aff-badge">
+                  <div className="pp-aff-label">Tracking via token</div>
+                  <div className="pp-aff-token">{aff}</div>
                 </div>
               </div>
             )}
@@ -195,7 +253,9 @@ export default async function ProductPage({
 
             {/* Vendor */}
             <div className="pp-card">
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9ca3af', marginBottom: 12 }}>Sold by</div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9ca3af', marginBottom: 12 }}>
+                Sold by
+              </div>
               <div className="pp-vendor-card">
                 <div className="pp-vendor-logo">
                   {product.logoUrl
@@ -204,15 +264,18 @@ export default async function ProductPage({
                 </div>
                 <div>
                   <div className="pp-vendor-name">{product.shopName}</div>
-                  <div className="pp-vendor-sub">{product.shopDescription?.slice(0, 60) ?? 'Verified vendor on AffilMarket'}</div>
+                  <div className="pp-vendor-sub">
+                    {product.shopDescription?.slice(0, 60) ?? 'Verified vendor on AffilMarket'}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Full description */}
             {product.description && (
               <div className="pp-card">
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>About this product</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  About this product
+                </div>
                 <div className="pp-desc">{product.description}</div>
               </div>
             )}
@@ -222,4 +285,3 @@ export default async function ProductPage({
     </>
   );
 }
-

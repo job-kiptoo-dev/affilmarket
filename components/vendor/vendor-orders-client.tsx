@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronUp, Banknote,
   AlertCircle,
 } from 'lucide-react';
+import { ReviewForm } from '../reviews/review-form';
 
 interface Order {
   id:            string;
@@ -348,6 +349,12 @@ export function VendorOrdersClient({ orders, activeStatus }: Props) {
                           {order.orderStatus === 'DELIVERED' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
                               <CheckCircle size={14} /> Order complete — earnings released
+                               <div style={{ marginTop: 16 }}>
+    <ReviewForm
+      orderId={order.id}
+      productTitle={order.productTitle}
+    />
+  </div>
                             </div>
                           )}
                         </div>

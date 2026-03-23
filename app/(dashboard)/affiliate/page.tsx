@@ -3,6 +3,7 @@ import { db }                from '@/lib/utils/db';
 import {
   affiliateProfiles, affiliateClicks, orders as ordersTable,
   balances, products as productsTable,
+  products,
 } from '@/drizzle/schema';
 import { eq, sql }           from 'drizzle-orm';
 import { redirect }          from 'next/navigation';
@@ -25,7 +26,11 @@ async function getAffiliateData(userId: string) {
   if (!profile.length) return null;
   const aff = profile[0];
 
-  const [clickCount, orderCount, balance, recentCommissions, clicksOverTime] = await Promise.all([
+  // const [clickCount, orderCount, balance, recentCommissions, clicksOverTime] = await Promise.all([
+
+const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topProducts] = await Promise.all([
+
+
     // click count
     db.select({ count: sql<number>`count(*)::int` })
       .from(affiliateClicks)
@@ -71,16 +76,51 @@ async function getAffiliateData(userId: string) {
       GROUP BY DATE_TRUNC('month', created_at), TO_CHAR(created_at, 'Mon YY')
       ORDER BY DATE_TRUNC('month', created_at)
     `),
+  db.select({
+      productId:    affiliateClicks.productId,
+      productTitle: productsTable.title,
+      productSlug:  productsTable.slug,
+      productImage: productsTable.mainImageUrl,
+      clicks:       sql<number>`count(*)::int`,
+      price:        productsTable.price,
+      commRate:     productsTable.affiliateCommissionRate,
+    })
+      .from(affiliateClicks)
+      .leftJoin(productsTable, eq(affiliateClicks.productId, productsTable.id))
+      .where(eq(affiliateClicks.affiliateId, aff.id))
+      .groupBy(
+        affiliateClicks.productId,
+        productsTable.title,
+        productsTable.slug,
+        productsTable.mainImageUrl,
+        productsTable.price,
+        productsTable.affiliateCommissionRate,
+      )
+      .orderBy(sql`count(*) desc`)
+      .limit(5),
   ]);
 
+
+
   return {
-    profile:           aff,
-    clickCount:        clickCount[0]?.count ?? 0,
-    orderCount:        orderCount[0]?.count ?? 0,
-    balance:           balance[0] ?? null,
-    recentCommissions,
-    clicksOverTime:    clicksOverTime as any[],
-  };
+  profile:           aff,
+  clickCount:        clickCount[0]?.count ?? 0,
+  orderCount:        orderCount[0]?.count ?? 0,
+  balance:           balance[0]           ?? null,
+  recentCommissions,
+  clicksOverTime:    clicksOverTime as any[],
+  topProducts:       topProducts ?? [],  // ← ADD THIS
+};
+
+
+  // return {
+  //   profile:           aff,
+  //   clickCount:        clickCount[0]?.count ?? 0,
+  //   orderCount:        orderCount[0]?.count ?? 0,
+  //   balance:           balance[0] ?? null,
+  //   recentCommissions,
+  //   clicksOverTime:    clicksOverTime as any[],
+  // };
 }
 
 export default async function AffiliateDashboardPage() {
@@ -99,11 +139,12 @@ export default async function AffiliateDashboardPage() {
     (sum, o) => sum + parseFloat(o.affiliateCommission ?? '0'), 0
   );
 
+
   const firstName = data.profile.fullName.split(' ')[0];
 
   return (
     <>
-    <DashboardShell role="AFFILIATE">
+    <DashboardShell role="AFFILIATE" vendorName={ auth.name }>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');
         .aff-page { font-family: 'DM Sans', -apple-system, sans-serif; }
@@ -227,6 +268,80 @@ export default async function AffiliateDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Top Products by Clicks */}
+<div className="aff-card" style={{ marginBottom: 20 }}>
+  <div className="aff-card-header">
+    <div>
+      <div className="aff-card-title">Top Products by Clicks</div>
+      <div className="aff-card-subtitle">Your most visited affiliate links</div>
+    </div>
+  </div>
+
+  {data.topProducts.length === 0 ? (
+
+    <div className="aff-empty">
+      <div className="aff-empty-icon">📊</div>
+      <div className="aff-empty-title">No clicks yet</div>
+      <div className="aff-empty-desc">Share your affiliate links to start tracking.</div>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {data.topProducts.map((p, i) => {
+        const commEarn = (parseFloat(p.price ?? '0') * parseFloat(p.commRate ?? '0')).toFixed(0);
+        return (
+          <div key={p.productId} style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            padding: '12px 0',
+            borderBottom: i < data.topProducts.length - 1 ? '1px solid #f3f4f6' : 'none',
+          }}>
+            {/* Rank */}
+            <div style={{
+              width: 28, height: 28, borderRadius: 8,
+              background: i === 0 ? '#fef9c3' : '#f3f4f6',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800,
+              color: i === 0 ? '#d97706' : '#6b7280',
+              flexShrink: 0,
+            }}>
+              {i + 1}
+            </div>
+
+            {/* Image */}
+            <div style={{
+              width: 44, height: 44, borderRadius: 8,
+              background: '#f3f4f6', overflow: 'hidden',
+              border: '1px solid #e5e7eb', flexShrink: 0,
+            }}>
+              {p.productImage
+                ? <img src={p.productImage} alt={p.productTitle ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🛍️</div>}
+            </div>
+
+            {/* Info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {p.productTitle}
+              </div>
+              <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600, marginTop: 2 }}>
+                +KES {commEarn} per sale
+              </div>
+            </div>
+
+            {/* Clicks */}
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#111', letterSpacing: '-0.03em' }}>
+                {p.clicks.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>clicks</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+</div>
+
 
         <div className="aff-stats-grid">
           <div className="aff-stat-card">

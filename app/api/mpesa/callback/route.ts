@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/utils/db';
 import {
-  orders, mpesaTransactions, balances,
-  products, affiliateProfiles, vendorProfiles,
-  users, platformSettings,
+  orders,
+  mpesaTransactions,
+  balances,
+  products,
+  affiliateProfiles,
+  vendorProfiles,
+  users,
+  platformSettings,
 } from '@/drizzle/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { sendOrderConfirmationEmail } from '@/lib/resend';
 
 // Safaricom IP whitelist
 const SAFARICOM_IPS = [
@@ -17,24 +23,23 @@ const SAFARICOM_IPS = [
 
 export async function POST(req: NextRequest) {
   try {
-    // ── IP whitelist check ───────────────────────────────────────
-    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
-                  ?? req.headers.get('remote-addr')
-                  ?? '';
+    // ── IP whitelist check ─────────────────────────────
+    const clientIp =
+      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+      req.headers.get('remote-addr') ??
+      '';
 
-    // Skip IP check on sandbox/localhost
     const isSandbox = process.env.MPESA_ENVIRONMENT !== 'live';
+
     if (!isSandbox && !SAFARICOM_IPS.includes(clientIp)) {
       console.warn('[callback] IP not whitelisted:', clientIp);
-      return NextResponse.json({ ok: true }); // always 200 to Safaricom
-    }
-
-    const body     = await req.json();
-    const callback = body?.Body?.stkCallback;
-
-    if (!callback) {
       return NextResponse.json({ ok: true });
     }
+
+    const body = await req.json();
+    const callback = body?.Body?.stkCallback;
+
+    if (!callback) return NextResponse.json({ ok: true });
 
     const {
       CheckoutRequestID,
@@ -43,9 +48,8 @@ export async function POST(req: NextRequest) {
       CallbackMetadata,
     } = callback;
 
-    console.log('[callback] received:', { CheckoutRequestID, ResultCode, ResultDesc });
-
-    // ── Find the pending transaction ─────────────────────────────
+    console.log('[callback]', { CheckoutRequestID, ResultCode });
+      // ── Find transaction ───────────────────────────────
     const txn = await db
       .select()
       .from(mpesaTransactions)
@@ -53,48 +57,47 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     if (!txn.length) {
-      console.warn('[callback] transaction not found:', CheckoutRequestID);
+      console.warn('[callback] transaction not found');
       return NextResponse.json({ ok: true });
     }
 
     const transaction = txn[0];
 
-    // Already processed — idempotency guard
+    // idempotency guard
     if (transaction.status !== 'PENDING') {
-      console.log('[callback] already processed:', CheckoutRequestID);
+      console.log('[callback] already processed');
       return NextResponse.json({ ok: true });
     }
 
-    // ── Parse Safaricom metadata ─────────────────────────────────
+    // ── Parse metadata ────────────────────────────────
     const meta: Record<string, any> = {};
     (CallbackMetadata?.Item ?? []).forEach((item: any) => {
       meta[item.Name] = item.Value;
     });
 
+    // =================================================
+    // PAYMENT SUCCESS
+    // =================================================
     if (ResultCode === 0) {
-      // ── PAYMENT SUCCESS ────────────────────────────────────────
+      console.log('[callback] PAYMENT SUCCESS');
 
-      console.log('[callback] payment success:', meta);
-
-      // Update transaction record
       await db.update(mpesaTransactions)
         .set({
-          status:             'SUCCESS',
+          status: 'SUCCESS',
           mpesaReceiptNumber: meta.MpesaReceiptNumber ?? null,
-          resultCode:         0,
-          resultDesc:         ResultDesc,
-          rawCallback:        body,
+          resultCode: 0,
+          resultDesc: ResultDesc,
+          rawCallback: body,
         })
         .where(eq(mpesaTransactions.checkoutRequestId, CheckoutRequestID));
 
-      // Get checkout metadata saved at STK push time
       const checkout = transaction.checkoutMetadata as any;
       if (!checkout) {
-        console.error('[callback] missing checkoutMetadata for:', transaction.id);
+        console.error('[callback] missing checkout metadata');
         return NextResponse.json({ ok: true });
       }
 
-      // ── Get platform fee rate ──────────────────────────────────
+      // ── Get platform fee ─────────────────────────────
       const feeSetting = await db
         .select({ value: platformSettings.value })
         .from(platformSettings)
@@ -102,148 +105,165 @@ export async function POST(req: NextRequest) {
         .limit(1);
 
       const platformFeeRate = parseFloat(feeSetting[0]?.value ?? '0.05');
-      const unitPrice       = parseFloat(checkout.unitPrice);
-      const commRate        = parseFloat(checkout.affiliateCommissionRate);
-      const totalAmount     = unitPrice * checkout.quantity;
-      const platformFee     = totalAmount * platformFeeRate;
-      const affiliateComm   = checkout.affiliateId ? totalAmount * commRate : 0;
-      const vendorEarnings  = totalAmount - platformFee - affiliateComm;
 
-      // ── Atomic stock decrement ─────────────────────────────────
-      const stockUpdate = await db
+      const unitPrice = parseFloat(checkout.unitPrice);
+      const totalAmount = unitPrice * checkout.quantity;
+
+      const commissionRate = parseFloat(
+        checkout.affiliateCommissionRate ?? '0'
+      );
+
+      const affiliateCommission =
+        checkout.affiliateId
+          ? totalAmount * commissionRate
+          : 0;
+
+      const platformFee = totalAmount * platformFeeRate;
+
+      const vendorEarnings =
+        totalAmount - platformFee - affiliateCommission;
+
+      // ── Atomic stock decrement ───────────────────────
+      const stock = await db
         .update(products)
-        .set({ stockQuantity: sql`${products.stockQuantity} - ${checkout.quantity}` })
+        .set({
+          stockQuantity:
+            sql`${products.stockQuantity} - ${checkout.quantity}`,
+        })
         .where(
           and(
             eq(products.id, checkout.productId),
             sql`${products.stockQuantity} >= ${checkout.quantity}`,
           )
         )
-        .returning({ id: products.id });
+        .returning();
 
-      if (!stockUpdate.length) {
-        // Stock ran out between STK push and payment
-        console.error('[callback] OVERSELL - stock exhausted after payment:', {
-          productId: checkout.productId,
-          receipt:   meta.MpesaReceiptNumber,
-        });
-        // TODO: trigger B2C refund here in production
+      if (!stock.length) {
+        console.error('[callback] STOCK EXHAUSTED AFTER PAYMENT');
         return NextResponse.json({ ok: true });
       }
 
-      // ── Create the order ───────────────────────────────────────
+      // ── Create Order ────────────────────────────────
       const orderId = crypto.randomUUID();
 
       await db.insert(orders).values({
-        id:                  orderId,
-        vendorId:            checkout.vendorId,
-        affiliateId:         checkout.affiliateId  ?? null,
-        productId:           checkout.productId,
-        price:               String(unitPrice),
-        quantity:            checkout.quantity,
-        totalAmount:         String(totalAmount),
-        customerName:        checkout.customerName,
-        customerPhone:       checkout.customerPhone,
-        customerEmail:       checkout.customerEmail ?? null,
-        city:                checkout.city          ?? null,
-        address:             checkout.address       ?? null,
-        notes:               checkout.notes         ?? null,
-        paymentStatus:       'PAID',
-        orderStatus:         'CONFIRMED',
-        mpesaReceiptNumber:  meta.MpesaReceiptNumber ?? null,
-        paymentReference:    meta.MpesaReceiptNumber ?? null,
-        platformFee:         String(platformFee),
-        affiliateCommission: String(affiliateComm),
-        vendorEarnings:      String(vendorEarnings),
-        platformRevenue:     String(platformFee),
+        id: orderId,
+        vendorId: checkout.vendorId,
+        affiliateId: checkout.affiliateId ?? null,
+        productId: checkout.productId,
+        price: String(unitPrice),
+        quantity: checkout.quantity,
+        totalAmount: String(totalAmount),
+
+        customerName: checkout.customerName,
+        customerPhone: checkout.customerPhone,
+        customerEmail: checkout.customerEmail ?? null,
+
+        city: checkout.city ?? null,
+        address: checkout.address ?? null,
+        notes: checkout.notes ?? null,
+
+        paymentStatus: 'PAID',
+        orderStatus: 'CONFIRMED',
+
+        mpesaReceiptNumber: meta.MpesaReceiptNumber ?? null,
+        paymentReference: meta.MpesaReceiptNumber ?? null,
+
+        platformFee: String(platformFee),
+        affiliateCommission: String(affiliateCommission),
+        vendorEarnings: String(vendorEarnings),
+        platformRevenue: String(platformFee),
+
         commissionsComputed: true,
-        balancesReleased:    false,
+        balancesReleased: false,
       });
 
-      // Link transaction → order
+      // link transaction
       await db.update(mpesaTransactions)
         .set({ orderId })
-        .where(eq(mpesaTransactions.checkoutRequestId, CheckoutRequestID));
+        .where(eq(mpesaTransactions.id, transaction.id));
 
-      // ── Credit vendor pending balance ──────────────────────────
-      const vendorUser = await db
+      // ── Credit Vendor ───────────────────────────────
+      const vendor = await db
         .select({ userId: vendorProfiles.userId })
         .from(vendorProfiles)
         .where(eq(vendorProfiles.id, checkout.vendorId))
         .limit(1);
 
-      if (vendorUser.length) {
+      if (vendor.length) {
         await db.update(balances)
-          .set({ pendingBalance: sql`${balances.pendingBalance} + ${String(vendorEarnings)}` })
-          .where(eq(balances.userId, vendorUser[0].userId));
+          .set({
+            pendingBalance:
+              sql`${balances.pendingBalance} + ${vendorEarnings}`,
+          })
+          .where(eq(balances.userId, vendor[0].userId));
       }
 
-      // ── Credit affiliate pending balance ───────────────────────
-      if (checkout.affiliateId && affiliateComm > 0) {
-        const affUser = await db
+      // ── Credit Affiliate ────────────────────────────
+      if (checkout.affiliateId && affiliateCommission > 0) {
+        const aff = await db
           .select({ userId: affiliateProfiles.userId })
           .from(affiliateProfiles)
           .where(eq(affiliateProfiles.id, checkout.affiliateId))
           .limit(1);
 
-        if (affUser.length) {
+        if (aff.length) {
           await db.update(balances)
-            .set({ pendingBalance: sql`${balances.pendingBalance} + ${String(affiliateComm)}` })
-            .where(eq(balances.userId, affUser[0].userId));
+            .set({
+              pendingBalance:
+                sql`${balances.pendingBalance} + ${affiliateCommission}`,
+            })
+            .where(eq(balances.userId, aff[0].userId));
         }
       }
 
-      // ── Credit platform fee to admin ───────────────────────────
-      const adminUser = await db
+      // ── Credit Platform ─────────────────────────────
+      const admin = await db
         .select({ id: users.id })
         .from(users)
         .where(eq(users.role, 'ADMIN'))
         .limit(1);
 
-      if (adminUser.length) {
-        const adminBal = await db
-          .select()
-          .from(balances)
-          .where(eq(balances.userId, adminUser[0].id))
-          .limit(1);
-
-        if (adminBal.length) {
-          await db.update(balances)
-            .set({ availableBalance: sql`${balances.availableBalance} + ${String(platformFee)}` })
-            .where(eq(balances.userId, adminUser[0].id));
-        } else {
-          await db.insert(balances).values({
-            id:               crypto.randomUUID(),
-            userId:           adminUser[0].id,
-            availableBalance: String(platformFee),
-            pendingBalance:   '0',
-            paidOutTotal:     '0',
-          });
-        }
+      if (admin.length) {
+        await db.update(balances)
+          .set({
+            availableBalance:
+              sql`${balances.availableBalance} + ${platformFee}`,
+          })
+          .where(eq(balances.userId, admin[0].id));
       }
 
-      console.log('[callback] order created successfully:', orderId);
+      // ── Send Email (non-blocking) ───────────────────
+      if (checkout.customerEmail) {
+        sendOrderConfirmationEmail({
+          customerEmail: checkout.customerEmail,
+          customerName: checkout.customerName,
+          productTitle: checkout.productTitle ?? 'Your Order',
+          totalAmount,
+          orderId,
+          shopName: checkout.shopName ?? 'Vendor',
+          mpesaReceipt: meta.MpesaReceiptNumber ?? null,
+        }).catch(console.error);
+      }
 
+      console.log('[callback] ORDER CREATED:', orderId);
     } else {
-      // ── PAYMENT FAILED / CANCELLED ─────────────────────────────
-      console.log('[callback] payment failed:', { ResultCode, ResultDesc });
+      console.log('[callback] PAYMENT FAILED');
 
       await db.update(mpesaTransactions)
         .set({
-          status:      'FAILED',
-          resultCode:  ResultCode,
-          resultDesc:  ResultDesc,
+          status: 'FAILED',
+          resultCode: ResultCode,
+          resultDesc: ResultDesc,
           rawCallback: body,
         })
-        .where(eq(mpesaTransactions.checkoutRequestId, CheckoutRequestID));
-
-      // No order created — nothing to clean up
+        .where(eq(mpesaTransactions.id, transaction.id));
     }
 
     return NextResponse.json({ ok: true });
 
   } catch (err) {
-    console.error('[mpesa/callback] unhandled error:', err);
-    return NextResponse.json({ ok: true }); // always 200 to Safaricom
+    console.error('[callback] ERROR', err);
+    return NextResponse.json({ ok: true });
   }
 }

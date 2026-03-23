@@ -83,6 +83,8 @@ export const vendorProfiles = pgTable('vendor_profiles', {
   kraPinDoc:   text('kra_pin_doc'),
   logoUrl:     text('logo_url'),
   description: text('description'),
+  suspendedAt:     timestamp('suspended_at'),
+suspendedReason: text('suspended_reason'),
   status:      vendorStatusEnum('status').notNull().default('pending'),
   avgRating:   decimal('avg_rating', { precision: 3, scale: 2 }),
   createdAt:   timestamp('created_at').notNull().defaultNow(),
@@ -102,6 +104,10 @@ export const affiliateProfiles = pgTable('affiliate_profiles', {
   bankAccountName:   text('bank_account_name'),
   bankAccountNumber: text('bank_account_number'),
   idNumber:          text('id_number'),
+   
+suspendedAt:     timestamp('suspended_at'),
+suspendedReason: text('suspended_reason'),
+
   status:            affiliateStatusEnum('status').notNull().default('pending'),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().$onUpdate(() => new Date()),

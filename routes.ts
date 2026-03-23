@@ -6,6 +6,7 @@ export const publicRoutes: string[] = [
   '/products',
   '/dashboard',
   '/checkout',        // ← add this
+  '/orders',
   '/affiliate/onboarding',  // ← add this
   '/vendor/onboarding',     // ← add this if not already there
 ];
