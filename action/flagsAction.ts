@@ -26,9 +26,12 @@ export async function getFlaggedVendors() {
     ORDER BY "cancelledOrders" DESC
     LIMIT 20
   `);
-  return rows as Array<{
-    id: string; shopName: string; status: string;
-    totalOrders: number; cancelledOrders: number;
+  return rows as unknown as Array<{
+    id: string,
+    shopName: string,
+    status: string,
+    totalOrders: number, 
+    cancelledOrders: number;
   }>;
 }
 
@@ -59,7 +62,7 @@ export async function getFlaggedAffiliates() {
     ORDER BY "totalClicks" DESC
     LIMIT 20
   `);
-  return rows as Array<{
+  return rows as unknown as Array<{
     id: string; name: string; email: string; status: string;
     totalClicks: number; totalOrders: number;
   }>;

@@ -5,7 +5,7 @@ import {
   balances, products as productsTable,
   products,
 } from '@/drizzle/schema';
-import { eq, sql }           from 'drizzle-orm';
+import { and, eq, sql }           from 'drizzle-orm';
 import { redirect }          from 'next/navigation';
 import { formatKES }         from '@/lib/utils';
 import { DashboardShell }    from '@/components/dashboard/dashboard-shell';
@@ -39,8 +39,12 @@ const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topPr
     // paid order count
     db.select({ count: sql<number>`count(*)::int` })
       .from(ordersTable)
-      .where(eq(ordersTable.affiliateId, aff.id))
-      .where(eq(ordersTable.paymentStatus, 'PAID')),
+
+
+      .where(and(
+  eq(ordersTable.affiliateId, aff.id),
+  eq(ordersTable.paymentStatus, 'PAID')
+)),
 
     // balance
     db.select()
@@ -59,8 +63,12 @@ const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topPr
     })
       .from(ordersTable)
       .leftJoin(productsTable, eq(ordersTable.productId, productsTable.id))
-      .where(eq(ordersTable.affiliateId, aff.id))
-      .where(eq(ordersTable.paymentStatus, 'PAID'))
+
+      .where(and(
+  eq(ordersTable.affiliateId, aff.id),
+  eq(ordersTable.paymentStatus, 'PAID')
+))
+
       .orderBy(sql`${ordersTable.createdAt} desc`)
       .limit(10),
 
@@ -406,7 +414,16 @@ export default async function AffiliateDashboardPage() {
             </div>
             <a href="/affiliate/analytics" className="aff-view-all">Full report <ArrowUpRight size={13} /></a>
           </div>
-          <SalesChart data={data.clicksOverTime.map((r) => ({ name: r.month, value: r.total }))} />
+
+          <SalesChart
+  data={data.clicksOverTime.map((r) => ({
+    month: r.month,
+    total: r.total,
+    count: 0,
+  }))}
+/>
+
+          {/* <SalesChart data={data.clicksOverTime.map((r) => ({ name: r.month, value: r.total, count:0 }))} /> */}
         </div>
 
         <div className="aff-card" style={{ marginBottom: 0 }}>

@@ -1,5 +1,5 @@
 import { products, vendorProfiles, categories, affiliateProfiles, affiliateClicks } from '@/drizzle/schema';
-import { eq, gte, sql }        from 'drizzle-orm';
+import { and, eq, gte, sql }        from 'drizzle-orm';
 import { notFound }       from 'next/navigation';
 import { formatKES }      from '@/lib/utils';
 import { headers, cookies } from 'next/headers';

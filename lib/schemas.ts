@@ -82,7 +82,7 @@ export const ProductSchema = z.object({
   subcategoryId: z.string().uuid().optional(),
   sku: z.string().optional(),
   price: z
-    .number({ invalid_type_error: 'Enter a valid price' })
+    .number('Enter a valid price')
     .positive('Price must be greater than 0')
     .max(1_000_000, 'Price too high'),
   stockQuantity: z.number().int().min(0, 'Stock cannot be negative'),

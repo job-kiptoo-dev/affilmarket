@@ -22,7 +22,7 @@ async function getProducts(search?: string, categoryId?: string) {
       or(
         ilike(products.title,            `%${search}%`),
         ilike(products.shortDescription, `%${search}%`),
-      )
+      )!
     );
   }
 

@@ -197,10 +197,27 @@ export default async function VendorDashboardPage() {
         </div>
 
         <div className="vd-grid4">
+
+
+
           <StatsCard title="Total Revenue"    value={fmt(totalRevenue)}    icon={<TrendingUp size={18} />}   color="green"  subtitle="All time" />
-          <StatsCard title="Total Orders"     value={totalOrders}          icon={<ShoppingCart size={18} />} color="blue"   subtitle={`${pendingOrders} pending`} />
+          {/* <StatsCard title="Total Orders"     value={totalOrders}          icon={<ShoppingCart size={18} />} color="blue"   subtitle={`${pendingOrders} pending`} /> */}
+          <StatsCard
+  title="Total Orders"
+  value={String(totalOrders)}
+  icon={<ShoppingCart size={18} />}
+  color="blue"
+  subtitle={`${pendingOrders} pending`}
+/>
           <StatsCard title="Pending Payout"   value={fmt(pendingBalance)}  icon={<Wallet size={18} />}       color="amber"  subtitle="Processing" />
-          <StatsCard title="Products Listed"  value={productCount}         icon={<Package size={18} />}      color="purple" subtitle="Active listings" />
+          {/* <StatsCard title="Products Listed"  value={productCount}         icon={<Package size={18} />}      color="purple" subtitle="Active listings" /> */}
+          <StatsCard
+  title="Products Listed"
+  value={String(productCount)}
+  icon={<Package size={18} />}
+  color="purple"
+  subtitle="Active listings"
+/>
         </div>
 
         <div className="vd-grid3">
@@ -241,7 +258,16 @@ export default async function VendorDashboardPage() {
               <Link href="/vendor/analytics" className="vd-link"><Eye size={13} /> Full report</Link>
             </div>
             <div className="vd-card-body">
-              <SalesChart data={monthlySales.map((m) => ({ name: m.month, value: m.revenue }))} />
+              {/* <SalesChart data={monthlySales.map((m) => ({ name: m.month, value: m.revenue,count:0, }))} /> */}
+
+              <SalesChart
+  data={monthlySales.map((m) => ({
+    month: m.month,
+    total: m.revenue,
+    count: 0,
+  }))}
+/>
+
             </div>
           </div>
 
@@ -250,7 +276,7 @@ export default async function VendorDashboardPage() {
               <span className="vd-card-title">Recent Orders</span>
               <Link href="/vendor/orders" className="vd-link">View all →</Link>
             </div>
-            <RecentOrders orders={recentOrders} />
+            <RecentOrders orders={recentOrders} role="VENDOR"/>
           </div>
         </div>
       </div>

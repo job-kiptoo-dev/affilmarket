@@ -77,9 +77,10 @@ export async function stkPush({
 
     return { data: res.data };
   } catch (error) {
-   console.error('[stkPush error]', error.response?.data ?? error.message);
+    console.error('[stkPush error]', error);
     if (error instanceof Error) return { error: error.message };
-    return { error: 'M-Pesa request failed' };}
+    return { error: 'M-Pesa request failed' };
+  }
 }
 
 export async function stkQuery(checkoutRequestId: string) {
@@ -105,8 +106,6 @@ export async function stkQuery(checkoutRequestId: string) {
     return { error: 'Query failed' };
   }
 }
-
-
 
 // /**
 //  * AffilMarket Kenya — M-Pesa Daraja API Integration

@@ -14,7 +14,7 @@ const ReviewSchema = z.object({
 
 export async function submitReview(payload: unknown) {
   const parsed = ReviewSchema.safeParse(payload);
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.message };
 
   const { orderId, rating, reviewText } = parsed.data;
 

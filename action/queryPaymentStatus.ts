@@ -1,104 +1,50 @@
+
+
 'use server';
 
 import { db }                from '@/lib/utils/db';
-import { orders, mpesaTransactions } from '@/drizzle/schema';
+import { mpesaTransactions } from '@/drizzle/schema';
 import { eq }                from 'drizzle-orm';
-import { stkPush, stkQuery } from '@/lib/mpesa';
+import { stkQuery }          from '@/lib/mpesa';
 
-export async function initiateMpesaPayment(
-  orderId:  string,
-  phone:    string,
-  amount:   number,
-) {
+export async function queryPaymentStatus(checkoutRequestId: string) {
   try {
-    const result = await stkPush({ phone, amount, orderId });
+    const txn = await db
+      .select({
+        status:     mpesaTransactions.status,
+        orderId:    mpesaTransactions.orderId,
+        resultCode: mpesaTransactions.resultCode,
+        resultDesc: mpesaTransactions.resultDesc,
+      })
+      .from(mpesaTransactions)
+      .where(eq(mpesaTransactions.checkoutRequestId, checkoutRequestId))
+      .limit(1);
 
-    if (result.error) {
-      return { error: result.error };
+    if (txn.length) {
+      if (txn[0].status === 'SUCCESS') {
+        return { status: 'PAID', orderId: txn[0].orderId };
+      }
+      if (txn[0].status === 'FAILED') {
+        return {
+          status: 'CANCELLED',
+          reason: txn[0].resultDesc ?? 'Payment was not completed',
+        };
+      }
     }
 
-    const { data } = result;
-
-    // ResponseCode '0' means the request was accepted by Safaricom
-    if (data.ResponseCode !== '0') {
-      return { error: data.ResponseDescription ?? 'M-Pesa request failed' };
-    }
-
-    // Record the pending transaction
-    await db.insert(mpesaTransactions).values({
-      id:                crypto.randomUUID(),
-      orderId,
-      checkoutRequestId: data.CheckoutRequestID,
-      merchantRequestId: data.MerchantRequestID,
-      phoneNumber:       phone,
-      amount:            String(amount),
-      status:            'PENDING',
-    });
-
-    return {
-      success:           true,
-      checkoutRequestId: data.CheckoutRequestID,
-      message:           data.CustomerMessage,
-    };
-  } catch (err) {
-    console.error('[initiateMpesaPayment]', err);
-    return { error: 'Failed to initiate payment. Please try again.' };
-  }
-}
-
-export async function queryPaymentStatus(
-  checkoutRequestId: string,
-  orderId:           string,
-) {
-  try {
+    // Callback hasn't arrived — query Safaricom directly
     const result = await stkQuery(checkoutRequestId);
-
     if (result.error) return { status: 'PENDING' };
 
-    const { data } = result;
-    const code = Number(data.ResultCode);
+    const code = Number(result.data?.ResultCode);
+    const desc = result.data?.ResultDesc ?? '';
 
-    if (code === 0) {
-      // ── Payment confirmed ────────────────────────────────────
-      await db.update(orders)
-        .set({ paymentStatus: 'PAID', orderStatus: 'CONFIRMED' })
-        .where(eq(orders.id, orderId));
+    if (code === 0)    return { status: 'PAID' };
+    if (code === 1032) return { status: 'CANCELLED', reason: desc || 'You cancelled the payment prompt' };
+    if (code === 1037) return { status: 'CANCELLED', reason: desc || 'The payment request timed out' };
 
-      await db.update(mpesaTransactions)
-        .set({
-          status:             'SUCCESS',
-          mpesaReceiptNumber: data.MpesaReceiptNumber ?? null,
-          resultCode:         0,
-          resultDesc:         data.ResultDesc,
-        })
-        .where(eq(mpesaTransactions.checkoutRequestId, checkoutRequestId));
-
-      return { status: 'PAID' };
-    }
-
-    if (code === 1032) {
-      // ── Cancelled by user ────────────────────────────────────
-      await db.update(mpesaTransactions)
-        .set({ status: 'FAILED', resultCode: 1032, resultDesc: 'Cancelled by user' })
-        .where(eq(mpesaTransactions.checkoutRequestId, checkoutRequestId));
-
-      return { status: 'CANCELLED' };
-    }
-
-    if (code === 1037) {
-      // ── Timeout ──────────────────────────────────────────────
-      await db.update(mpesaTransactions)
-        .set({ status: 'FAILED', resultCode: 1037, resultDesc: 'Request timed out' })
-        .where(eq(mpesaTransactions.checkoutRequestId, checkoutRequestId));
-
-      return { status: 'CANCELLED' };
-    }
-
-    // Still pending — query returned but payment not done yet
     return { status: 'PENDING' };
-
-  } catch (err) {
-    console.error('[queryPaymentStatus]', err);
+  } catch {
     return { status: 'PENDING' };
   }
 }

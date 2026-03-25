@@ -27,7 +27,7 @@ export async function submitAffiliateOnboarding(formData: unknown) {
   }
 
   const parsed = OnboardingSchema.safeParse(formData);
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.message };
 
   const {
     fullName, phone, idNumber, payoutMethod,

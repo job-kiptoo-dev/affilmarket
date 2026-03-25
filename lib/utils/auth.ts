@@ -4,6 +4,7 @@ import { db } from "./db";
 import * as schema from "@/drizzle/schema";
 
 export const auth = betterAuth({
+  generateId: () => crypto.randomUUID(),
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,
@@ -13,9 +14,6 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
     cookieCache: { enabled: true, maxAge: 60 * 5 },
-  },
-  advanced:{ 
-    generateId: () => crypto.randomUUID(),
   },
   emailAndPassword: {
     enabled: true,

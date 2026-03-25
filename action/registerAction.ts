@@ -9,10 +9,10 @@ import { affiliateProfiles, vendorProfiles } from '@/drizzle/schema';
 import { auth } from '@/lib/utils/auth';
 
 
-export async function registerUser(formData : unknown) {
+export async function registerUser(formData: unknown) {
   const parsed = RegisterSchema.safeParse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.message };
   }
 
   const { fullName, email, phone, password, role } = parsed.data;
@@ -22,14 +22,17 @@ export async function registerUser(formData : unknown) {
     return { error: 'Email already in use' };
   }
 
-  // Pass role directly — better-auth requires it as an additional field
+
+// Narrow the optional fields after successful parse
+if (!fullName) return { error: 'Full name is required' };
+
+
   const result = await auth.api.signUpEmail({
     body: {
       name: fullName,
       email,
+      role,
       password,
-      role,          // ← was missing
-      phone: phone,
     },
   });
 
@@ -39,25 +42,31 @@ export async function registerUser(formData : unknown) {
 
   const userId = result.user.id;
 
-if (role === 'VENDOR' || role === 'BOTH') {
-  await db.insert(vendorProfiles).values({
-    id: crypto.randomUUID(),
-    userId,
-    shopName: fullName,
-  });
-}
+  // Save role (and phone) — Better Auth doesn't store these automatically
+  await db
+    .update(users)
+    .set({ role, phone })
+    .where(eq(users.id, userId));
 
-if (role === 'AFFILIATE' || role === 'BOTH') {
-  await db.insert(affiliateProfiles).values({
-    id: crypto.randomUUID(),
-    userId,
-    fullName,
-    affiliateToken: generateAffiliateToken(),
-  });
-}
+  if (role === 'VENDOR' || role === 'BOTH') {
+    await db.insert(vendorProfiles).values({
+      id: crypto.randomUUID(),
+      userId,
+      shopName: fullName,
+    });
+  }
+
+  if (role === 'AFFILIATE' || role === 'BOTH') {
+    await db.insert(affiliateProfiles).values({
+      id: crypto.randomUUID(),
+      userId,
+      fullName,
+      affiliateToken: generateAffiliateToken(),
+    });
+  }
+
   return { success: true, role };
 }
-
 // export async function registerUser(formData: unknown) {
 //   const parsed = RegisterSchema.safeParse(formData);
 //   if (!parsed.success) {

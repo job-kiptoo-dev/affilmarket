@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-// import { createOrder } from '@/action/checkoutAction';
-// import { initiateMpesaPayment, queryPaymentStatus } from '@/action/mpesaAction';
 import { formatKES } from '@/lib/utils';
-import { ShoppingBag, Phone, User, Mail, MapPin, Loader2, CheckCircle, XCircle, AlertCircle, ChevronRight, Minus, Plus } from 'lucide-react';
+import { ShoppingBag, Phone, User,MapPin, Loader2,  AlertCircle, Minus, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { initiateMpesaPayment, queryPaymentStatus } from '@/action/queryPaymentStatus';
-import { createOrder } from '@/action/checkoutAction';
+import { initiateCheckout } from '@/action/checkoutAction';
+import { queryPaymentStatus } from '@/action/queryPaymentStatus';
 
 interface Product {
   id:            string;
@@ -41,94 +39,98 @@ export function CheckoutForm({ product, affiliateId, affToken, defaultQty }: Pro
   const [checkoutRequestId, setCRId] = useState('');
   const [pollCount, setPollCount]    = useState(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const [failReason, setFailReason] = useState('');
 
   const total      = product.price * qty;
   const commission = affiliateId ? (total * product.commissionRate) : 0;
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
+
+
   // ── Poll payment status ────────────────────────────────────
-  useEffect(() => {
-    if (step !== 'polling' || !checkoutRequestId || !orderId) return;
+useEffect(() => {
+  if (step !== 'polling' || !checkoutRequestId) return;
 
-    const poll = async () => {
-      const result = await queryPaymentStatus(checkoutRequestId, orderId);
+  const poll = async () => {
+    const result = await queryPaymentStatus(checkoutRequestId);
 
-      if (result.status === 'PAID') {
-        if (pollRef.current) clearInterval(pollRef.current);
-        setStep('success');
-        return;
-      }
-      if (result.status === 'CANCELLED') {
-        if (pollRef.current) clearInterval(pollRef.current);
+    // if (result.status === 'PAID') {
+    //   if (pollRef.current) clearInterval(pollRef.current);
+    //   setStep('success');
+    //   return;
+    // }
+
+
+    // In polling useEffect, when PAID:
+if (result.status === 'PAID') {
+  if (pollRef.current) clearInterval(pollRef.current);
+  if (result.orderId) setOrderId(result.orderId); // ← get it from poll result
+  setStep('success');
+  return;
+}
+
+    if (result.status === 'CANCELLED') {
+      if (pollRef.current) clearInterval(pollRef.current);
+      setFailReason(result.reason ?? 'Payment was not completed'); // ← capture reason
+      setStep('failed');
+      return;
+    }
+
+    setPollCount(c => {
+      if (c >= 18) {
+        clearInterval(pollRef.current!);
+        setFailReason('The payment request timed out. Please try again.');
         setStep('failed');
-        return;
       }
-
-      setPollCount(c => {
-        if (c >= 18) { // 3 min max (18 × 10s)
-          clearInterval(pollRef.current!);
-          setStep('failed');
-        }
-        return c + 1;
-      });
-    };
-
-    pollRef.current = setInterval(poll, 10000);
-    poll(); // immediate first check
-
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [step, checkoutRequestId, orderId]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!form.name.trim())  return setError('Full name is required');
-    if (!form.phone.trim()) return setError('Phone number is required');
-    if (!/^(\+?254|0)[17]\d{8}$/.test(form.phone.replace(/\s/g, ''))) {
-      return setError('Enter a valid Kenyan phone number (e.g. 0712345678)');
-    }
-
-    setStep('paying');
-
-    // 1. Create order
-    const orderResult = await createOrder ({
-      productId:     product.id,
-      affiliateId:   affiliateId,
-      quantity:      qty,
-      customerName:  form.name.trim(),
-      customerPhone: form.phone.trim(),
-      customerEmail: form.email.trim() || null,
-      city:          form.city.trim() || null,
-      address:       form.address.trim() || null,
-      notes:         form.notes.trim() || null,
+      return c + 1;
     });
-
-    if (orderResult.error || !orderResult.orderId) {
-      setError(orderResult.error ?? 'Failed to create order');
-      setStep('form');
-      return;
-    }
-
-    setOrderId(orderResult.orderId);
-
-    // 2. Trigger M-Pesa STK push
-    const mpesaResult = await initiateMpesaPayment(
-      orderResult.orderId,
-      form.phone.trim(),
-      total,
-    );
-
-    if (mpesaResult.error || !mpesaResult.checkoutRequestId) {
-      setError(mpesaResult.error ?? 'M-Pesa request failed');
-      setStep('form');
-      return;
-    }
-
-    setCRId(mpesaResult.checkoutRequestId);
-    setStep('polling');
   };
+
+  pollRef.current = setInterval(poll, 10000);
+  poll();
+
+  return () => { if (pollRef.current) clearInterval(pollRef.current); };
+}, [step, checkoutRequestId]);
+
+
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError('');
+
+  if (!form.name.trim())  return setError('Full name is required');
+  if (!form.phone.trim()) return setError('Phone number is required');
+  if (!/^(\+?254|0)[17]\d{8}$/.test(form.phone.replace(/\s/g, ''))) {
+    return setError('Enter a valid Kenyan phone number (e.g. 0712345678)');
+  }
+
+  setStep('paying');
+
+  // Single action — validates stock, triggers STK, stores metadata
+  const result = await initiateCheckout({
+    productId:     product.id,
+    affiliateId:   affiliateId,
+    quantity:      qty,
+    customerName:  form.name.trim(),
+    customerPhone: form.phone.trim(),
+    customerEmail: form.email.trim() || null,
+    city:          form.city.trim()  || null,
+    address:       form.address.trim() || null,
+    notes:         form.notes.trim() || null,
+  });
+
+  if (result.error || !result.checkoutRequestId) {
+    setError(result.error ?? 'Failed to initiate payment');
+    setStep('form');
+    return;
+  }
+
+  setCRId(result.checkoutRequestId);
+  setStep('polling');
+};
+
+
 
   // ── SUCCESS screen ─────────────────────────────────────────
   if (step === 'success') {
@@ -164,22 +166,48 @@ export function CheckoutForm({ product, affiliateId, affToken, defaultQty }: Pro
   }
 
   // ── FAILED screen ──────────────────────────────────────────
-  if (step === 'failed') {
-    return (
-      <div style={pageStyle}>
-        <div style={centerBox}>
-          <div style={{ fontSize: 64, marginBottom: 16, textAlign: 'center' }}>😔</div>
-          <div style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: 24, fontWeight: 800, color: '#111', margin: '0 0 8px' }}>Payment Cancelled</h2>
-            <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 24px' }}>The M-Pesa prompt was cancelled or timed out. Your order was not charged.</p>
-            <button onClick={() => { setStep('form'); setError(''); }} style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 24px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-              Try Again
-            </button>
-          </div>
+if (step === 'failed') {
+  return (
+    <div style={pageStyle}>
+      <div style={centerBox}>
+        <div style={{ fontSize: 64, marginBottom: 16, textAlign: 'center' }}>😔</div>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#111', margin: '0 0 8px' }}>
+            Payment Failed
+          </h2>
+
+          {/* ← Show actual Safaricom reason */}
+          <p style={{
+            fontSize: 14, color: '#6b7280', margin: '0 0 8px',
+            background: '#fef2f2', border: '1px solid #fecaca',
+            borderRadius: 10, padding: '10px 16px',
+          }}>
+            {failReason || 'The payment was not completed.'}
+          </p>
+
+          <p style={{ fontSize: 13, color: '#9ca3af', margin: '0 0 24px' }}>
+            No charges were made. Your order was not placed.
+          </p>
+
+          <button
+            onClick={() => { setStep('form'); setError(''); setFailReason(''); }}
+            style={{
+              background: '#16a34a', color: '#fff', border: 'none',
+              borderRadius: 10, padding: '12px 24px',
+              fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            Try Again
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+
+
+
 
   // ── POLLING screen ─────────────────────────────────────────
   if (step === 'polling') {

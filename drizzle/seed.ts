@@ -59,7 +59,7 @@ async function seed() {
 
     // ✅ Use Better Auth — it handles password hashing correctly
     const result = await auth.api.signUpEmail({
-      body: { name, email, password, role, phone },
+      body: { name, email, password,role },
     });
 
     if (!result?.user) throw new Error(`Failed to create: ${email}`);

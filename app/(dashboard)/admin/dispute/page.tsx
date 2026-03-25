@@ -1,3 +1,6 @@
+
+export const dynamic = 'force-dynamic';
+
 import { db }              from '@/lib/utils/db';
 import { disputeTickets, orders as ordersTable, users } from '@/drizzle/schema';
 import { eq, desc }        from 'drizzle-orm';
@@ -59,7 +62,7 @@ export default async function AdminDisputesPage() {
         </div>
         <AdminDisputesClient
           disputes={disputes}
-          adminId={auth.id}
+          adminId={auth.sub}
           adminName={auth.name ?? 'Admin'}
         />
       </div>

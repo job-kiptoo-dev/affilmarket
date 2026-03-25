@@ -19,7 +19,7 @@ export async function requestPayout(payload: unknown) {
   if (!auth) return { error: 'Unauthorized' };
 
   const parsed = PayoutSchema.safeParse(payload);
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.message };
 
   const { amount, method, mpesaPhone } = parsed.data;
 

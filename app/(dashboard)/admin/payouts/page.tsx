@@ -1,5 +1,9 @@
 // import { getAuthUser }    from '@/lib/healpers/auth-server';
 // import { db }             from '@/lib/db';
+
+export const dynamic = 'force-dynamic';
+
+
 import {
   payoutRequests, users, vendorProfiles, affiliateProfiles, balances,
 } from '@/drizzle/schema';
@@ -99,7 +103,7 @@ export default async function AdminPayoutsPage({
   ]);
 
   return (
-    <DashboardShell role="ADMIN">
+    <DashboardShell role="ADMIN" vendorName={auth.name} >
       <AdminPayoutsClient
         payouts={payouts.map(p => ({
           ...p,

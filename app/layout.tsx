@@ -3,6 +3,8 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/components/providers/query-provider';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: {
     default: 'AffilMarket Kenya — Affiliate Marketplace',

@@ -39,7 +39,7 @@ export async function updateProduct(productId: string, payload: unknown) {
   if (!vendor.length) return { error: 'Vendor profile not found' };
 
   const parsed = UpdateProductSchema.safeParse(payload);
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.message };
 
   const {
     title, shortDescription, description, categoryId, subcategoryId,

@@ -1,4 +1,4 @@
-import { db }      from '@/lib/db';
+import { db }      from '@/lib/utils/db';
 import { orders, products, vendorProfiles, balances, affiliateProfiles } from '@/drizzle/schema';
 import { eq, sql } from 'drizzle-orm';
 import { notFound } from 'next/navigation';

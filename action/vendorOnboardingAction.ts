@@ -27,7 +27,7 @@ export async function submitVendorOnboarding(formData: unknown) {
   }
 
   const parsed = OnboardingSchema.safeParse(formData);
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.message };
 
   const { shopName, legalName, phone, description, kraPin, kraPinDoc, logoUrl, city, address } = parsed.data;
 

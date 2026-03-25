@@ -75,7 +75,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <Navbar user={user}
+      <Navbar
       />
       <HeroSection />
       <StatsBar />

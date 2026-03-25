@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 export async function loginUser(formData: unknown) {
   const parsed = LoginSchema.safeParse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.message };
   }
 
   const { email, password } = parsed.data;

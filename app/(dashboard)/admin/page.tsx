@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { db }          from '@/lib/utils/db';
 import {
   orders as ordersTable, users, vendorProfiles,
@@ -134,7 +136,7 @@ export async function getFlaggedVendors() {
     ORDER BY "cancelledOrders" DESC
     LIMIT 20
   `);
-  return rows as Array<{
+  return rows as unknown as Array<{
     id: string; shopName: string; status: string;
     totalOrders: number; cancelledOrders: number;
   }>;
@@ -167,7 +169,7 @@ export async function getFlaggedAffiliates() {
     ORDER BY "totalClicks" DESC
     LIMIT 20
   `);
-  return rows as Array<{
+  return rows as unknown as Array<{
     id: string; name: string; email: string; status: string;
     totalClicks: number; totalOrders: number;
   }>;
@@ -282,7 +284,15 @@ export default async function AdminDashboardPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Platform GMV — Last 6 Months
           </h2>
-          <SalesChart data={stats.monthlySales.map((m) => ({ name: m.month, value: m.revenue }))} />
+
+          <SalesChart
+  data={stats.monthlySales.map((m) => ({
+    month: m.month,
+    total: m.revenue,
+    count: 0,
+  }))}
+/>
+
         </div>
 
         {/* Recent Orders */}
