@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Save, Upload, X, Plus, Info,
@@ -8,6 +8,8 @@ import {
   FileText, AlertCircle, CheckCircle, Loader2, WifiOff,
 } from 'lucide-react';
 import { createProduct } from '@/action/createProductAction';
+import { uploadProductImage } from '@/action/uploadProductImageAction';
+// import { uploadProductImage } from '@/action/uploadProductImageAction';
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 interface SubCategory { id: string; name: string; slug: string; }
@@ -31,13 +33,8 @@ interface FormData {
 
 type FieldError = Partial<Record<keyof FormData | 'gallery' | '_form', string>>;
 
-// Typed API error shapes
-interface ApiValidationError {
-  issues: Partial<Record<string, string[]>>;
-}
-interface ApiMessageError {
-  error: string;
-}
+interface ApiValidationError { issues: Partial<Record<string, string[]>>; }
+interface ApiMessageError    { error: string; }
 type ApiErrorBody = ApiValidationError | ApiMessageError | null;
 
 const INITIAL: FormData = {
@@ -64,27 +61,6 @@ function commissionToDecimal(pct: string): number {
 function isValidHttpUrl(str: string): boolean {
   try { return /^https?:\/\/.+/.test(new URL(str).href); }
   catch { return false; }
-}
-
-/** Normalise API error body → human-readable message */
-function extractApiMessage(body: ApiErrorBody, status: number): string {
-  if (status === 401) return 'You must be logged in to add products.';
-  if (status === 403) return 'You don\'t have permission to create products.';
-  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
-  if (status >= 500)  return 'Server error — please try again in a few minutes.';
-  if (!body)          return `Unexpected error (HTTP ${status}).`;
-  if ('error' in body && typeof body.error === 'string') return body.error;
-  return `Request failed (HTTP ${status}).`;
-}
-
-/** Parse field-level validation issues from the API safely */
-function parseApiIssues(body: ApiErrorBody): FieldError {
-  if (!body || !('issues' in body) || typeof body.issues !== 'object') return {};
-  return Object.fromEntries(
-    Object.entries(body.issues)
-      .filter(([, msgs]) => Array.isArray(msgs) && msgs.length > 0)
-      .map(([k, msgs]) => [k, (msgs as string[])[0]])
-  ) as FieldError;
 }
 
 // ── SECTION WRAPPER ────────────────────────────────────────────────────────────
@@ -155,10 +131,11 @@ function FormErrorBanner({ message, offline }: { message: string; offline?: bool
       display: 'flex', alignItems: 'flex-start', gap: 10,
       background: '#fef2f2', border: '1px solid #fecaca',
       borderRadius: 10, padding: '12px 16px',
-      fontSize: 13, color: '#991b1b', marginBottom: 20,
-      lineHeight: 1.6,
+      fontSize: 13, color: '#991b1b', marginBottom: 20, lineHeight: 1.6,
     }}>
-      {offline ? <WifiOff size={16} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />}
+      {offline
+        ? <WifiOff size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+        : <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />}
       <span>{message}</span>
     </div>
   );
@@ -183,19 +160,105 @@ const selectStyle = (hasError?: boolean): React.CSSProperties => ({
   paddingRight: 36,
 });
 
+// ── IMAGE UPLOAD AREA ─────────────────────────────────────────────────────────
+// A reusable "Upload file OR paste URL" widget used for both main image and gallery.
+function ImageInputArea({
+  value,
+  onChange,
+  onError: onFieldError,
+  placeholder = 'https://',
+  uploading,
+  onFileSelect,
+  disabled,
+}: {
+  value:        string;
+  onChange:     (url: string) => void;
+  onError?:     (msg: string) => void;
+  placeholder?: string;
+  uploading:    boolean;
+  onFileSelect: (file: File) => void;
+  disabled?:    boolean;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onFileSelect(file);
+    // reset so same file can be re-selected
+    e.target.value = '';
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+      {/* Hidden file input */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        style={{ display: 'none' }}
+        onChange={handleFile}
+        disabled={disabled || uploading}
+      />
+
+      {/* URL paste input */}
+      <input
+        className="np-input"
+        style={{ ...inputStyle(), flex: 1 }}
+        type="url"
+        placeholder={placeholder}
+        value={value}
+        disabled={uploading || disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+
+      {/* Upload-from-device button */}
+      <button
+        type="button"
+        disabled={uploading || disabled}
+        onClick={() => fileRef.current?.click()}
+        title="Upload from your device"
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          gap:            6,
+          background:     uploading ? '#f3f4f6' : '#f0fdf4',
+          border:         '1px solid #bbf7d0',
+          borderRadius:   8,
+          padding:        '10px 14px',
+          fontSize:       13,
+          fontWeight:     600,
+          color:          uploading ? '#9ca3af' : '#16a34a',
+          cursor:         uploading || disabled ? 'not-allowed' : 'pointer',
+          whiteSpace:     'nowrap',
+          fontFamily:     "'DM Sans', sans-serif",
+          flexShrink:     0,
+          transition:     'all 0.15s',
+        }}
+      >
+        {uploading
+          ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Uploading…</>
+          : <><Upload size={13} /> Upload</>}
+      </button>
+    </div>
+  );
+}
+
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
 export function NewProductForm({ categories }: Props) {
   const router = useRouter();
 
-  const [form,       setForm]      = useState<FormData>(INITIAL);
-  const [errors,     setErrors]    = useState<FieldError>({});
-  const [saving,     setSaving]    = useState(false);
-  const [saveState,  setSaveState] = useState<'idle' | 'success' | 'error'>('idle');
-  const [newGallery, setNewGallery] = useState('');
-  const [charCount,  setCharCount] = useState(0);
-  const [offline,    setOffline]   = useState(false);
-  // Track which image URLs have broken so we can show an inline warning
-  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
+  const [form,            setForm]           = useState<FormData>(INITIAL);
+  const [errors,          setErrors]         = useState<FieldError>({});
+  const [saving,          setSaving]         = useState(false);
+  const [saveState,       setSaveState]      = useState<'idle' | 'success' | 'error'>('idle');
+  const [newGallery,      setNewGallery]     = useState('');
+  const [charCount,       setCharCount]      = useState(0);
+  const [offline,         setOffline]        = useState(false);
+  const [brokenImages,    setBrokenImages]   = useState<Set<string>>(new Set());
+
+  // Per-field upload states
+  const [mainUploading,   setMainUploading]    = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
 
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === form.categoryId),
@@ -203,40 +266,84 @@ export function NewProductForm({ categories }: Props) {
   );
   const subCategories = selectedCategory?.children ?? [];
 
-  // ── Clear a single field error ─────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
   const clearError = useCallback((key: keyof FieldError) => {
     setErrors((prev) => {
-      if (!prev[key]) return prev;          // avoid re-render if already clear
-      const next = { ...prev };
-      delete next[key];
-      return next;
+      if (!prev[key]) return prev;
+      const next = { ...prev }; delete next[key]; return next;
     });
   }, []);
 
-  // ── Generic field setter ───────────────────────────────────────────────────
   const set = useCallback((key: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     clearError(key as keyof FieldError);
-    clearError('_form');                    // dismiss form-level banner on any edit
+    clearError('_form');
   }, [clearError]);
 
-  // ── Category change (resets subcategory) ──────────────────────────────────
   const handleCategoryChange = useCallback((value: string) => {
     setForm((prev) => ({ ...prev, categoryId: value, subcategoryId: '' }));
     clearError('categoryId');
     clearError('_form');
   }, [clearError]);
 
-  // ── Image broken handler ───────────────────────────────────────────────────
   const markImageBroken = useCallback((url: string) => {
     setBrokenImages((prev) => new Set(prev).add(url));
   }, []);
 
-  // ── Gallery helpers ────────────────────────────────────────────────────────
+  // ── Supabase upload helpers ────────────────────────────────────────────────
+  const uploadToSupabase = useCallback(async (
+    file: File,
+    setUploading: (v: boolean) => void,
+    onSuccess:    (url: string) => void,
+    onError:      (msg: string) => void,
+  ) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const result = await uploadProductImage(fd);
+      if (result.error) { onError(result.error); return; }
+      if (result.url)   { onSuccess(result.url);  return; }
+      onError('Upload returned no URL. Please try again.');
+    } catch {
+      onError('Upload failed. Check your connection and try again.');
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  // Main image upload
+  const handleMainImageFile = useCallback((file: File) => {
+    uploadToSupabase(
+      file,
+      setMainUploading,
+      (url) => { set('mainImageUrl', url); },
+      (msg) => setErrors((e) => ({ ...e, mainImageUrl: msg })),
+    );
+  }, [uploadToSupabase, set]);
+
+  // Gallery image upload
+  const handleGalleryFile = useCallback((file: File) => {
+    if (form.galleryImages.length >= 8) {
+      setErrors((e) => ({ ...e, gallery: 'Maximum 8 gallery images allowed' }));
+      return;
+    }
+    uploadToSupabase(
+      file,
+      setGalleryUploading,
+      (url) => {
+        if (form.galleryImages.includes(url)) return;
+        setForm((p) => ({ ...p, galleryImages: [...p.galleryImages, url] }));
+        clearError('gallery');
+      },
+      (msg) => setErrors((e) => ({ ...e, gallery: msg })),
+    );
+  }, [uploadToSupabase, form.galleryImages, clearError]);
+
+  // ── Gallery URL helpers ────────────────────────────────────────────────────
   const addGalleryUrl = useCallback(() => {
     const url = newGallery.trim();
     if (!url) return;
-
     if (!isValidHttpUrl(url)) {
       setErrors((e) => ({ ...e, gallery: 'Please enter a valid URL starting with https://' }));
       return;
@@ -249,23 +356,13 @@ export function NewProductForm({ categories }: Props) {
       setErrors((e) => ({ ...e, gallery: 'Maximum 8 gallery images allowed' }));
       return;
     }
-
     setForm((p) => ({ ...p, galleryImages: [...p.galleryImages, url] }));
     setNewGallery('');
     clearError('gallery');
   }, [newGallery, form.galleryImages, clearError]);
 
   const removeGallery = useCallback((i: number) => {
-    setForm((p) => ({
-      ...p,
-      galleryImages: p.galleryImages.filter((_, idx) => idx !== i),
-    }));
-    // Remove from broken set if it was there
-    setBrokenImages((prev) => {
-      const next = new Set(prev);
-      // We don't know the URL here without a closure, so just rebuild safely
-      return next;
-    });
+    setForm((p) => ({ ...p, galleryImages: p.galleryImages.filter((_, idx) => idx !== i) }));
     clearError('gallery');
   }, [clearError]);
 
@@ -274,28 +371,28 @@ export function NewProductForm({ categories }: Props) {
     const e: FieldError = {};
 
     const title = form.title.trim();
-    if (!title)              e.title = 'Product title is required';
-    else if (title.length < 3)   e.title = 'Title must be at least 3 characters';
+    if (!title)                e.title = 'Product title is required';
+    else if (title.length < 3) e.title = 'Title must be at least 3 characters';
     else if (title.length > 200) e.title = 'Title must be under 200 characters';
 
     if (form.shortDescription.length > 300)
       e.shortDescription = 'Short description must be 300 characters or fewer';
 
     const price = Number(form.price);
-    if (!form.price)          e.price = 'Price is required';
-    else if (isNaN(price))    e.price = 'Price must be a number';
-    else if (price <= 0)      e.price = 'Price must be greater than 0';
+    if (!form.price)             e.price = 'Price is required';
+    else if (isNaN(price))       e.price = 'Price must be a number';
+    else if (price <= 0)         e.price = 'Price must be greater than 0';
     else if (price > 10_000_000) e.price = 'Price seems too high — please double-check';
 
     const stock = Number(form.stockQuantity);
-    if (isNaN(stock))         e.stockQuantity = 'Stock quantity must be a number';
-    else if (stock < 0)       e.stockQuantity = 'Stock quantity cannot be negative';
+    if (isNaN(stock))              e.stockQuantity = 'Stock quantity must be a number';
+    else if (stock < 0)            e.stockQuantity = 'Stock quantity cannot be negative';
     else if (!Number.isInteger(stock)) e.stockQuantity = 'Stock quantity must be a whole number';
 
     const comm = Number(form.affiliateCommissionRate);
-    if (isNaN(comm))          e.affiliateCommissionRate = 'Commission must be a number';
-    else if (comm < 0)        e.affiliateCommissionRate = 'Commission cannot be negative';
-    else if (comm > 100)      e.affiliateCommissionRate = 'Commission cannot exceed 100%';
+    if (isNaN(comm))   e.affiliateCommissionRate = 'Commission must be a number';
+    else if (comm < 0) e.affiliateCommissionRate = 'Commission cannot be negative';
+    else if (comm > 100) e.affiliateCommissionRate = 'Commission cannot exceed 100%';
 
     if (form.mainImageUrl && !isValidHttpUrl(form.mainImageUrl))
       e.mainImageUrl = 'Must be a valid URL starting with https://';
@@ -311,7 +408,6 @@ export function NewProductForm({ categories }: Props) {
     clearError('_form');
 
     if (!validate()) {
-      // Scroll to first error
       setTimeout(() => {
         const el = document.querySelector('[data-error="true"]') as HTMLElement | null;
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -319,7 +415,6 @@ export function NewProductForm({ categories }: Props) {
       return;
     }
 
-    // Guard: check network before hitting the server
     if (!navigator.onLine) {
       setOffline(true);
       setSaveState('error');
@@ -344,109 +439,47 @@ export function NewProductForm({ categories }: Props) {
       country:                 form.country,
     };
 
-    // try {
-    //   const res = await fetch('/api/vendor/products', {
-    //     method:  'POST',
-    //     headers: { 'Content-Type': 'application/json' },
-    //     body:    JSON.stringify(payload),
-    //   });
-    //
-    //   // Safely parse JSON — the server might return non-JSON on 5xx
-    //   let body: ApiErrorBody = null;
-    //   try {
-    //     body = await res.json() as ApiErrorBody;
-    //   } catch {
-    //     // Response wasn't JSON (e.g. nginx 502 HTML page)
-    //     body = null;
-    //   }
-    //
-    //   if (!res.ok) {
-    //     // Field-level validation errors from the server
-    //     const fieldErrors = parseApiIssues(body);
-    //     if (Object.keys(fieldErrors).length > 0) {
-    //       setErrors((prev) => ({ ...prev, ...fieldErrors }));
-    //     }
-    //
-    //     // Always set a form-level message so the user knows something went wrong
-    //     const formMsg = extractApiMessage(body, res.status);
-    //     setErrors((prev) => ({ ...prev, _form: formMsg }));
-    //     setSaveState('error');
-    //     return;
-    //   }
-    //
-    //   setSaveState('success');
-    //   setTimeout(() => router.push('/vendor/products'), 1200);
-    //
-    // } catch (err) {
-    //   // Network failure (DNS error, timeout, connection refused, etc.)
-    //   const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
-    //   if (isOffline) {
-    //     setOffline(true);
-    //     setErrors((prev) => ({
-    //       ...prev,
-    //       _form: 'No internet connection. Please check your network and try again.',
-    //     }));
-    //   } else {
-    //     setErrors((prev) => ({
-    //       ...prev,
-    //       _form: 'An unexpected error occurred. Please try again or contact support if the problem persists.',
-    //     }));
-    //   }
-    //   setSaveState('error');
-    //
-    // } finally {
-    //   setSaving(false);
-    // }
-    
+    try {
+      const result = await createProduct(payload);
 
-    // At top of file add:
+      if (result.error) {
+        if ('issues' in result && result.issues) {
+          const fieldErrors = Object.fromEntries(
+            Object.entries(result.issues)
+              .filter(([, msgs]) => Array.isArray(msgs) && (msgs as string[]).length > 0)
+              .map(([k, msgs]) => [k, (msgs as string[])[0]])
+          ) as FieldError;
+          if (Object.keys(fieldErrors).length > 0) {
+            setErrors((prev) => ({ ...prev, ...fieldErrors }));
+          }
+        }
 
-// Replace the entire try/catch in handleSubmit with:
-try {
-  const result = await createProduct(payload);
+        let formMsg = result.error;
+        if (result.status === 401) formMsg = 'You must be logged in to add products.';
+        if (result.status === 403) formMsg = "You don't have permission to create products.";
+        if (result.status === 404) formMsg = 'Vendor profile not found. Please complete onboarding.';
 
-  if (result.error) {
-    // Field-level issues
-    if ('issues' in result && result.issues) {
-      const fieldErrors = Object.fromEntries(
-        Object.entries(result.issues)
-          .filter(([, msgs]) => Array.isArray(msgs) && (msgs as string[]).length > 0)
-          .map(([k, msgs]) => [k, (msgs as string[])[0]])
-      ) as FieldError;
-      if (Object.keys(fieldErrors).length > 0) {
-        setErrors((prev) => ({ ...prev, ...fieldErrors }));
+        setErrors((prev) => ({ ...prev, _form: formMsg }));
+        setSaveState('error');
+        return;
       }
+
+      setSaveState('success');
+      setTimeout(() => router.push('/vendor/products'), 1200);
+
+    } catch (err) {
+      const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
+      if (isOffline) {
+        setOffline(true);
+        setErrors((prev) => ({ ...prev, _form: 'No internet connection. Please check your network and try again.' }));
+      } else {
+        setErrors((prev) => ({ ...prev, _form: 'An unexpected error occurred. Please try again.' }));
+      }
+      setSaveState('error');
+    } finally {
+      setSaving(false);
     }
-
-    // Status-based messages
-    let formMsg = result.error;
-    if (result.status === 401) formMsg = 'You must be logged in to add products.';
-    if (result.status === 403) formMsg = "You don't have permission to create products.";
-    if (result.status === 404) formMsg = 'Vendor profile not found. Please complete onboarding.';
-
-    setErrors((prev) => ({ ...prev, _form: formMsg }));
-    setSaveState('error');
-    return;
-  }
-
-  setSaveState('success');
-  setTimeout(() => router.push('/vendor/products'), 1200);
-
-} catch (err) {
-  const isOffline = !navigator.onLine || (err instanceof TypeError && err.message === 'Failed to fetch');
-  if (isOffline) {
-    setOffline(true);
-    setErrors((prev) => ({ ...prev, _form: 'No internet connection. Please check your network and try again.' }));
-  } else {
-    setErrors((prev) => ({ ...prev, _form: 'An unexpected error occurred. Please try again.' }));
-  }
-  setSaveState('error');
-} finally {
-  setSaving(false);
-}
-  }
-
-
+  };
 
   // ── Commission preview ─────────────────────────────────────────────────────
   const commPreview = form.price && !isNaN(Number(form.price)) && Number(form.price) > 0
@@ -531,6 +564,12 @@ try {
           font-size: 11px; color: #b45309; margin-top: 5px;
           display: flex; align-items: center; gap: 4px;
         }
+        .np-upload-hint {
+          background: #f9fafb; border: 1px solid #e5e7eb;
+          border-radius: 10px; padding: 12px 16px;
+          display: flex; align-items: flex-start; gap: 10px;
+          font-size: 13px; color: #6b7280;
+        }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @media (max-width: 700px) {
           .np-grid-2, .np-grid-3 { grid-template-columns: 1fr; }
@@ -575,10 +614,8 @@ try {
           </span>
         </div>
 
-        {/* ── FORM-LEVEL ERROR BANNER ── */}
-        {errors._form && (
-          <FormErrorBanner message={errors._form} offline={offline} />
-        )}
+        {/* Form-level error */}
+        {errors._form && <FormErrorBanner message={errors._form} offline={offline} />}
 
         {/* ── SECTION 1: Basic Info ── */}
         <Section title="Basic Information" icon={<FileText size={15} />} hint="Product name, description and categorisation">
@@ -594,7 +631,6 @@ try {
               maxLength={200}
               onChange={(e) => set('title', e.target.value)}
               onBlur={() => {
-                // Eagerly validate title on blur for fast feedback
                 const t = form.title.trim();
                 if (t && t.length < 3)
                   setErrors((e) => ({ ...e, title: 'Title must be at least 3 characters' }));
@@ -612,7 +648,7 @@ try {
               style={{ ...inputStyle(!!errors.shortDescription), minHeight: 80 }}
               placeholder="A brief summary of what this product offers…"
               value={form.shortDescription}
-              maxLength={320}          /* allow typing past 300 so the counter turns red */
+              maxLength={320}
               rows={3}
               onChange={(e) => {
                 set('shortDescription', e.target.value);
@@ -656,9 +692,7 @@ try {
                 className="np-input"
                 style={selectStyle()}
                 value={form.subcategoryId}
-                onChange={(e) =>
-                  set('subcategoryId', e.target.value)
-                                  }
+                onChange={(e) => set('subcategoryId', e.target.value)}
                 disabled={subCategories.length === 0}
               >
                 <option value="">Select subcategory…</option>
@@ -800,34 +834,26 @@ try {
         </Section>
 
         {/* ── SECTION 3: Images ── */}
-        <Section title="Product Images" icon={<ImageIcon size={15} />} hint="Main image and up to 8 gallery photos (paste URLs)">
-
+        <Section
+          title="Product Images"
+          icon={<ImageIcon size={15} />}
+          hint="Upload from your device or paste a URL — main image + up to 8 gallery photos"
+        >
+          {/* ── Main image ── */}
           <Field
-            label="Main Product Image URL"
+            label="Main Product Image"
             error={errors.mainImageUrl}
-            hint="The primary image shown on product cards and at the top of the product page"
+            hint="The primary image shown on product cards. Upload a file or paste a CDN URL."
           >
-            <input
-              data-error={!!errors.mainImageUrl || undefined}
-              className="np-input"
-              style={inputStyle(!!errors.mainImageUrl)}
-              type="url"
-              placeholder="https://res.cloudinary.com/yourcloud/image/upload/..."
+            <ImageInputArea
               value={form.mainImageUrl}
-              onChange={(e) => {
-                set('mainImageUrl', e.target.value);
-                // Reset broken state when URL changes
-                setBrokenImages((prev) => {
-                  const next = new Set(prev);
-                  next.delete(e.target.value);
-                  return next;
-                });
-              }}
-              onBlur={() => {
-                if (form.mainImageUrl && !isValidHttpUrl(form.mainImageUrl))
-                  setErrors((e) => ({ ...e, mainImageUrl: 'Must be a valid URL starting with https://' }));
-              }}
+              onChange={(url) => { set('mainImageUrl', url); clearError('mainImageUrl'); }}
+              uploading={mainUploading}
+              onFileSelect={handleMainImageFile}
+              placeholder="https://…  or click Upload to choose a file"
             />
+
+            {/* Preview */}
             {form.mainImageUrl && isValidHttpUrl(form.mainImageUrl) && (
               <div style={{ marginTop: 10, display: 'flex', gap: 12, alignItems: 'center' }}>
                 <img
@@ -840,22 +866,20 @@ try {
                   }}
                   onError={() => markImageBroken(form.mainImageUrl)}
                 />
-                {brokenImages.has(form.mainImageUrl) ? (
-                  <p className="np-img-broken">
-                    <AlertCircle size={11} /> Image could not be loaded — check the URL
-                  </p>
-                ) : (
-                  <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Image preview</span>
-                )}
+                {brokenImages.has(form.mainImageUrl)
+                  ? <p className="np-img-broken"><AlertCircle size={11} /> Image could not be loaded — check the URL</p>
+                  : <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Image preview</span>}
               </div>
             )}
           </Field>
 
+          {/* ── Gallery ── */}
           <Field
             label="Gallery Images"
             error={errors.gallery}
-            hint={`Add up to 8 additional product images (${form.galleryImages.length}/8 added)`}
+            hint={`Upload or paste URLs — up to 8 additional images (${form.galleryImages.length}/8 added)`}
           >
+            {/* Existing thumbnails */}
             {form.galleryImages.length > 0 && (
               <div className="np-gallery-grid" style={{ marginBottom: 12 }}>
                 {form.galleryImages.map((url, i) => (
@@ -873,9 +897,8 @@ try {
                       <div style={{
                         position: 'absolute', inset: 0,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 10, color: '#b45309', textAlign: 'center', padding: 4,
                       }}>
-                        <AlertCircle size={14} />
+                        <AlertCircle size={14} color="#b45309" />
                       </div>
                     )}
                     <button
@@ -891,48 +914,42 @@ try {
               </div>
             )}
 
+            {/* Add row — upload or paste URL */}
             {form.galleryImages.length < 8 && (
               <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  className="np-input"
-                  style={{ ...inputStyle(!!errors.gallery), flex: 1 }}
-                  type="url"
-                  placeholder="https://res.cloudinary.com/..."
+                {/* URL input + Add button */}
+                <ImageInputArea
                   value={newGallery}
-                  onChange={(e) => {
-                    setNewGallery(e.target.value);
-                    clearError('gallery');
-                  }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGalleryUrl(); } }}
+                  onChange={(url) => { setNewGallery(url); clearError('gallery'); }}
+                  uploading={galleryUploading}
+                  onFileSelect={handleGalleryFile}
+                  placeholder="https://… or click Upload"
                 />
                 <button
                   type="button"
                   onClick={addGalleryUrl}
+                  disabled={galleryUploading}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     background: '#f0fdf4', border: '1px solid #bbf7d0',
-                    borderRadius: 8, padding: '10px 16px',
+                    borderRadius: 8, padding: '10px 14px',
                     fontSize: 13, fontWeight: 600, color: '#16a34a',
-                    cursor: 'pointer', whiteSpace: 'nowrap',
-                    fontFamily: "'DM Sans', sans-serif",
+                    cursor: galleryUploading ? 'not-allowed' : 'pointer',
+                    whiteSpace: 'nowrap', fontFamily: "'DM Sans', sans-serif",
+                    opacity: galleryUploading ? 0.6 : 1,
                   }}
                 >
-                  <Plus size={13} /> Add
+                  <Plus size={13} /> Add URL
                 </button>
               </div>
             )}
           </Field>
 
-          <div style={{
-            background: '#f9fafb', border: '1px solid #e5e7eb',
-            borderRadius: 10, padding: '12px 16px',
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            fontSize: 13, color: '#6b7280',
-          }}>
+          <div className="np-upload-hint">
             <Upload size={14} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>
-              Upload images to <strong>Cloudinary</strong> first, then paste the CDN URL here.
-              Recommended size: 800×800px, square format works best for product cards.
+              Files are stored in <strong>Supabase Storage</strong> and linked automatically.
+              Max <strong>5 MB</strong> per image · JPEG, PNG, WebP or GIF · Recommended: 800×800 px square.
             </span>
           </div>
         </Section>
@@ -941,9 +958,9 @@ try {
         <Section title="Review & Submit" icon={<Package size={15} />} hint="Check your product details before submitting">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 4 }}>
             {[
-              { label: 'Title',      value: form.title                                            || '—' },
+              { label: 'Title',      value: form.title                                                || '—' },
               { label: 'Price',      value: form.price ? `KES ${Number(form.price).toLocaleString()}` : '—' },
-              { label: 'Category',   value: categories.find((c) => c.id === form.categoryId)?.name || '—' },
+              { label: 'Category',   value: categories.find((c) => c.id === form.categoryId)?.name   || '—' },
               { label: 'Commission', value: form.affiliateCommissionRate ? `${form.affiliateCommissionRate}%` : '0%' },
               { label: 'Stock',      value: `${form.stockQuantity || 0} units` },
               { label: 'Status',     value: 'Pending Review' },
@@ -982,7 +999,7 @@ try {
             <button
               type="submit"
               className={`np-btn-save${saveState === 'success' ? ' success' : saveState === 'error' ? ' error' : ''}`}
-              disabled={saving || saveState === 'success'}
+              disabled={saving || saveState === 'success' || mainUploading || galleryUploading}
             >
               {saving ? (
                 <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>

@@ -4,29 +4,31 @@ import { notFound }       from 'next/navigation';
 import { formatKES }      from '@/lib/utils';
 import { headers, cookies } from 'next/headers';
 import Link               from 'next/link';
-import { ShoppingBag, Store, Star } from 'lucide-react';
+import { ShoppingBag, Store } from 'lucide-react';
 import { db } from '@/lib/utils/db';
 import { resolveAffiliateId } from '@/lib/healpers/affiliate-utils';
+import { ProductImages } from '@/components/products/productImages';
+// import { ProductImages } from '@/components/productImages'; // ← new
 
 async function getProduct(slug: string) {
   const result = await db
     .select({
-      id:                     products.id,
-      title:                  products.title,
-      slug:                   products.slug,
-      price:                  products.price,
-      shortDescription:       products.shortDescription,
-      description:            products.description,
-      mainImageUrl:           products.mainImageUrl,
-      galleryImages:          products.galleryImages,
+      id:                      products.id,
+      title:                   products.title,
+      slug:                    products.slug,
+      price:                   products.price,
+      shortDescription:        products.shortDescription,
+      description:             products.description,
+      mainImageUrl:            products.mainImageUrl,
+      galleryImages:           products.galleryImages,
       affiliateCommissionRate: products.affiliateCommissionRate,
-      stockQuantity:          products.stockQuantity,
-      country:                products.country,
-      shopName:               vendorProfiles.shopName,
-      shopDescription:        vendorProfiles.description,
-      logoUrl:                vendorProfiles.logoUrl,
-      categoryName:           categories.name,
-      orderCount:             sql<number>`count(distinct ${(await import('@/drizzle/schema')).orders.id})::int`,
+      stockQuantity:           products.stockQuantity,
+      country:                 products.country,
+      shopName:                vendorProfiles.shopName,
+      shopDescription:         vendorProfiles.description,
+      logoUrl:                 vendorProfiles.logoUrl,
+      categoryName:            categories.name,
+      orderCount:              sql<number>`count(distinct ${(await import('@/drizzle/schema')).orders.id})::int`,
     })
     .from(products)
     .leftJoin(vendorProfiles, eq(products.vendorId, vendorProfiles.id))
@@ -42,13 +44,8 @@ async function getProduct(slug: string) {
   return result[0] ?? null;
 }
 
-
 async function logAffiliateClick({
-  affiliateToken,
-  productId,
-  ipAddress,
-  userAgent,
-  referrer,
+  affiliateToken, productId, ipAddress, userAgent, referrer,
 }: {
   affiliateToken: string;
   productId:      string;
@@ -56,12 +53,10 @@ async function logAffiliateClick({
   userAgent:      string;
   referrer:       string;
 }) {
-
   try {
     const affiliateId = await resolveAffiliateId(affiliateToken);
-    if (!affiliateId) return; // invalid token — skip silently
+    if (!affiliateId) return;
 
-    // Dedup check
     const recentClick = await db
       .select({ id: affiliateClicks.id })
       .from(affiliateClicks)
@@ -91,7 +86,6 @@ async function logAffiliateClick({
   }
 }
 
-
 export default async function ProductPage({
   params,
   searchParams,
@@ -105,7 +99,6 @@ export default async function ProductPage({
 
   if (!product) notFound();
 
-  // ── Log affiliate click ──────────────────────────────────────
   if (aff) {
     const headersList = await headers();
     const cookieStore = await cookies();
@@ -116,8 +109,7 @@ export default async function ProductPage({
     const userAgent = headersList.get('user-agent') ?? '';
     const referrer  = headersList.get('referer')    ?? '';
 
-    // Deduplicate: only log once per affiliate+product per browser session
-    const cookieKey = `ac_${aff}_${product.id}`;
+    const cookieKey     = `ac_${aff}_${product.id}`;
     const alreadyLogged = cookieStore.get(cookieKey);
 
     if (!alreadyLogged) {
@@ -134,7 +126,6 @@ export default async function ProductPage({
   const price      = parseFloat(product.price);
   const commRate   = parseFloat(product.affiliateCommissionRate);
   const commission = (price * commRate).toFixed(0);
-  const baseUrl    = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
   return (
     <>
@@ -146,8 +137,8 @@ export default async function ProductPage({
         .pp-nav-logo span { color: #16a34a; }
         .pp-body { max-width: 1100px; margin: 0 auto; padding: 32px 24px; display: grid; grid-template-columns: 1fr 400px; gap: 32px; }
         .pp-images { display: flex; flex-direction: column; gap: 12px; }
-        .pp-main-img { aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; }
-        .pp-main-img img { width: 100%; height: 100%; object-fit: cover; }
+        .pp-main-img { aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: #f3f4f6; border: 1px solid #e5e7eb; transition: all 0.2s; }
+        .pp-main-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .pp-main-img-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 80px; }
         .pp-right { display: flex; flex-direction: column; gap: 16px; }
         .pp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px; }
@@ -185,16 +176,15 @@ export default async function ProductPage({
         </nav>
 
         <div className="pp-body">
-          {/* Images */}
-          <div className="pp-images">
-            <div className="pp-main-img">
-              {product.mainImageUrl
-                ? <img src={product.mainImageUrl} alt={product.title} />
-                : <div className="pp-main-img-placeholder">🛍️</div>}
-            </div>
-          </div>
 
-          {/* Details */}
+          {/* ── Images — now a client component with thumbnail switching ── */}
+          <ProductImages
+            mainImageUrl={product.mainImageUrl}
+              galleryImages={product.galleryImages as string[] | null}
+            title={product.title}
+          />
+
+          {/* ── Details (unchanged) ── */}
           <div className="pp-right">
             <div className="pp-card">
               {product.categoryName && (
@@ -220,7 +210,6 @@ export default async function ProductPage({
               )}
             </div>
 
-            {/* Affiliate commission card */}
             {aff && (
               <div className="pp-comm-card">
                 <div className="pp-comm-label">Your commission on this sale</div>
@@ -235,7 +224,6 @@ export default async function ProductPage({
               </div>
             )}
 
-            {/* Stats */}
             <div className="pp-stats">
               <div className="pp-stat">
                 <div className="pp-stat-val">{product.orderCount}</div>
@@ -251,7 +239,6 @@ export default async function ProductPage({
               </div>
             </div>
 
-            {/* Vendor */}
             <div className="pp-card">
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9ca3af', marginBottom: 12 }}>
                 Sold by
