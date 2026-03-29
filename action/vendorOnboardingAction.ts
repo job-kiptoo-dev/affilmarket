@@ -31,27 +31,59 @@ export async function submitVendorOnboarding(formData: unknown) {
 
   const { shopName, legalName, phone, description, kraPin, kraPinDoc, logoUrl, city, address } = parsed.data;
 
-  const existing = await db
-    .select({ id: vendorProfiles.id })
-    .from(vendorProfiles)
-    .where(eq(vendorProfiles.userId, auth.sub))
-    .limit(1);
-
-  if (existing.length) return { error: 'Already onboarded' };
-
-  await db.insert(vendorProfiles).values({
-    id:          crypto.randomUUID(),
-    userId:      auth.sub,
-    shopName,
-    legalName:   legalName   ?? null,
-    phone:       phone       ?? null,
-    description: description ?? null,
-    kraPin:      kraPin      ?? null,
-    kraPinDoc:   kraPinDoc   ?? null,
-    logoUrl:     logoUrl     ?? null,
-    shopAddress: city || address ? { city, address } : null,
-    status:      'pending',
-  });
+  // ✅ UPDATE the existing row (created at signup) instead of inserting
+  await db
+    .update(vendorProfiles)
+    .set({
+      shopName,
+      legalName:    legalName   ?? null,
+      phone:        phone       ?? null,
+      description:  description ?? null,
+      kraPin:       kraPin      ?? null,
+      kraPinDoc:    kraPinDoc   ?? null,
+      logoUrl:      logoUrl     ?? null,
+      shopAddress:  city || address ? { city, address } : null,
+      status:       'pending',
+      isOnboarded:  true,        // ✅ marks onboarding as complete
+    })
+    .where(eq(vendorProfiles.userId, auth.sub));
 
   return { success: true };
 }
+
+
+// export async function submitVendorOnboarding(formData: unknown) {
+//   const auth = await getAuthUser();
+//   if (!auth || !['VENDOR', 'BOTH', 'ADMIN'].includes(auth.role)) {
+//     return { error: 'Unauthorized' };
+//   }
+//
+//   const parsed = OnboardingSchema.safeParse(formData);
+//   if (!parsed.success) return { error: parsed.error.message };
+//
+//   const { shopName, legalName, phone, description, kraPin, kraPinDoc, logoUrl, city, address } = parsed.data;
+//
+//   const existing = await db
+//     .select({ id: vendorProfiles.id })
+//     .from(vendorProfiles)
+//     .where(eq(vendorProfiles.userId, auth.sub))
+//     .limit(1);
+//
+//   if (existing.length) return { error: 'Already onboarded' };
+//
+//   await db.insert(vendorProfiles).values({
+//     id:          crypto.randomUUID(),
+//     userId:      auth.sub,
+//     shopName,
+//     legalName:   legalName   ?? null,
+//     phone:       phone       ?? null,
+//     description: description ?? null,
+//     kraPin:      kraPin      ?? null,
+//     kraPinDoc:   kraPinDoc   ?? null,
+//     logoUrl:     logoUrl     ?? null,
+//     shopAddress: city || address ? { city, address } : null,
+//     status:      'pending',
+//   });
+//
+//   return { success: true };
+// }

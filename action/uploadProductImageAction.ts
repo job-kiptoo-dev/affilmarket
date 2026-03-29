@@ -52,6 +52,69 @@ export async function uploadProductImage(formData: FormData): Promise<UploadResu
 }
 
 
+export async function uploadVendorLogo(formData: FormData): Promise<UploadResult> {
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const file = formData.get('file') as File | null;
+  if (!file || file.size === 0) return { error: 'No file received.' };
+  if (!ALLOWED_TYPES.includes(file.type)) return { error: 'Only JPEG, PNG, WebP and GIF images are allowed.' };
+  if (file.size > MAX_MB * 1024 * 1024) return { error: `Image must be under ${MAX_MB} MB.` };
+
+  const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const path = `vendor-logos/${name}`;  // ← different folder from products
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+
+  if (uploadError) {
+    console.error('[uploadVendorLogo]', uploadError);
+    return { error: uploadError.message ?? 'Upload failed. Please try again.' };
+  }
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl };
+}
+
+export async function uploadKraDoc(formData: FormData): Promise<UploadResult> {
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const file = formData.get('file') as File | null;
+  if (!file || file.size === 0) return { error: 'No file received.' };
+  if (file.size > MAX_MB * 1024 * 1024) return { error: `File must be under ${MAX_MB} MB.` };
+
+  // KRA docs can be PDF too, not just images
+  const ALLOWED_DOC_TYPES = [...ALLOWED_TYPES, 'application/pdf'];
+  if (!ALLOWED_DOC_TYPES.includes(file.type))
+    return { error: 'Only JPEG, PNG, WebP, GIF and PDF files are allowed.' };
+
+  const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'pdf';
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const path = `kra-docs/${name}`;  // ← private folder
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+
+  if (uploadError) {
+    console.error('[uploadKraDoc]', uploadError);
+    return { error: uploadError.message ?? 'Upload failed. Please try again.' };
+  }
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl };
+}
+
+
 
 // "use server";
 //

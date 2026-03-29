@@ -73,6 +73,7 @@ export default function RegisterPage() {
     await fetchUser();
     if (result.role === 'AFFILIATE') router.push('/affiliate');
     else router.push('/vendor');
+    
   };
 
   return (

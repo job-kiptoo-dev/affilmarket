@@ -1,0 +1,1 @@
+ALTER TABLE "vendor_profiles" ADD COLUMN "is_onboarded" boolean DEFAULT false NOT NULL;

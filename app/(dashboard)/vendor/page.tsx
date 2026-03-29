@@ -22,12 +22,15 @@ function fmt(n: number) {
 
 async function getVendorData(userId: string) {
   const vendor = await db
-    .select({ id: vendorProfiles.id, shopName: vendorProfiles.shopName })
+    .select({ id: vendorProfiles.id, shopName: vendorProfiles.shopName ,
+                isOnboarded: vendorProfiles.isOnboarded,
+    })
     .from(vendorProfiles)
     .where(eq(vendorProfiles.userId, userId))
     .limit(1);
 
-  if (!vendor.length) return null;
+  // if (!vendor.length) return null;
+    if (!vendor.length || !vendor[0].isOnboarded) return null; // ← redirect to onboarding
   const { id: vendorId, shopName } = vendor[0];
 
   const sixMonthsAgo = new Date();
@@ -125,7 +128,7 @@ export default async function VendorDashboardPage() {
   if (!auth || !['VENDOR', 'BOTH', 'ADMIN'].includes(auth.role)) redirect('/login');
 
   const data = await getVendorData(auth.sub);
-  if (!data) redirect('/vendor/onboarding');
+  if (!data) redirect('/vendor/onboarding/');
 
   const {
     shopName, totalRevenue, totalOrders, pendingOrders, productCount,

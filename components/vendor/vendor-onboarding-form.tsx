@@ -11,6 +11,7 @@ import {
   ChevronRight, ChevronLeft, Upload, MapPinned,
   Phone, AlignLeft, Building2, Hash, Image as ImageIcon,
 } from 'lucide-react';
+import { uploadKraDoc, uploadVendorLogo } from '@/action/uploadProductImageAction';
 
 const schema = z.object({
   shopName:    z.string().min(2, 'Shop name is required').max(100),
@@ -68,20 +69,52 @@ export function VendorOnboardingForm() {
 
   const values = watch();
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setValue('logoUrl', reader.result as string);
-    reader.readAsDataURL(file);
-  };
+// Add to imports
 
-  const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setValue('kraPinDoc', file.name); // store filename; replace with real upload URL in prod
-  };
+// Replace handleLogoUpload with:
+const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
+  // Show a local preview immediately while uploading
+  const reader = new FileReader();
+  reader.onload = () => setValue('logoUrl', reader.result as string); // temp preview
+  reader.readAsDataURL(file);
+
+  // Upload to Supabase
+  const formData = new FormData();
+  formData.append('file', file);
+  const result = await uploadVendorLogo(formData);
+
+  if (result.error) {
+    setServerError(result.error); // reuse your existing error state
+    setValue('logoUrl', '');      // clear the temp preview
+    return;
+  }
+
+  setValue('logoUrl', result.url!); // ✅ replace temp preview with real Supabase URL
+};
+
+
+
+const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setValue('kraPinDoc', file.name); // show filename immediately as feedback
+
+  const formData = new FormData();
+  formData.append('file', file);
+  const result = await uploadKraDoc(formData);
+
+  if (result.error) {
+    setServerError(result.error);
+    setValue('kraPinDoc', ''); // clear on failure
+    return;
+  }
+
+  setValue('kraPinDoc', result.url!); // ✅ real Supabase URL instead of just filename
+};
   const nextStep = async () => {
     const fieldMap: Record<number, (keyof FormData)[]> = {
       1: ['shopName', 'phone', 'description', 'logoUrl'],
