@@ -5,7 +5,7 @@ import { payoutRequests, balances } from '@/drizzle/schema';
 import { eq }             from 'drizzle-orm';
 import { getAuthUser }    from '@/lib/healpers/auth-server';
 import { revalidatePath } from 'next/cache';
-import { stkPush }        from '@/lib/mpesa';
+import { b2cPayout, stkPush }        from '@/lib/mpesa';
 
 export async function approvePayoutRequest(payoutId: string) {
   const auth = await getAuthUser();
@@ -56,62 +56,108 @@ export async function rejectPayoutRequest(payoutId: string, adminNote: string) {
   return { success: true };
 }
 
+// export async function processPayoutViaMpesa(
+//   payoutId:  string,
+//   phone:     string,
+//   amount:    number,
+// ) {
+//   const auth = await getAuthUser();
+//   if (!auth || auth.role !== 'ADMIN') return { error: 'Unauthorized' };
+//
+//   try {
+//     const result = await stkPush({
+//       phone,
+//       amount,
+//       orderId: payoutId,
+//     });
+//
+//     if (result.error) return { error: result.error };
+//
+//     await db.update(payoutRequests)
+//       .set({
+//         status:    'PAID',
+//         adminNote: `M-Pesa B2C sent to ${phone}`,
+//       })
+//       .where(eq(payoutRequests.id, payoutId));
+//
+//     // Update paidOutTotal
+//     const payout = await db
+//       .select()
+//       .from(payoutRequests)
+//       .where(eq(payoutRequests.id, payoutId))
+//       .limit(1);
+//
+//     if (payout.length) {
+//       const balance = await db
+//         .select()
+//         .from(balances)
+//         .where(eq(balances.userId, payout[0].userId))
+//         .limit(1);
+//
+//       if (balance.length) {
+//         await db.update(balances)
+//           .set({
+//             paidOutTotal: String(
+//               parseFloat(balance[0].paidOutTotal ?? '0') + amount
+//             ),
+//           })
+//           .where(eq(balances.userId, payout[0].userId));
+//       }
+//     }
+//
+//     revalidatePath('/admin/payouts');
+//     return { success: true };
+//   } catch (err) {
+//     console.error('[processPayoutViaMpesa]', err);
+//     return { error: 'Failed to process payout' };
+//   }
+// }
+
+
+
+
 export async function processPayoutViaMpesa(
-  payoutId:  string,
-  phone:     string,
-  amount:    number,
+  payoutId: string,
+  phone:    string,
+  amount:   number,
 ) {
   const auth = await getAuthUser();
   if (!auth || auth.role !== 'ADMIN') return { error: 'Unauthorized' };
 
-  try {
-    const result = await stkPush({
-      phone,
-      amount,
-      orderId: payoutId,
-    });
+  const payout = await db
+    .select()
+    .from(payoutRequests)
+    .where(eq(payoutRequests.id, payoutId))
+    .limit(1);
 
-    if (result.error) return { error: result.error };
+  if (!payout.length) return { error: 'Payout not found' };
+  const p = payout[0];
+  if (p.status === 'PAID') return { error: 'Payout already processed' };
 
-    await db.update(payoutRequests)
-      .set({
-        status:    'PAID',
-        adminNote: `M-Pesa B2C sent to ${phone}`,
-      })
-      .where(eq(payoutRequests.id, payoutId));
+  const result = await b2cPayout({
+    phone,
+    amount,
+    payoutId,
+    remarks: `AffilMarket payout to ${phone}`,
+  });
 
-    // Update paidOutTotal
-    const payout = await db
-      .select()
-      .from(payoutRequests)
-      .where(eq(payoutRequests.id, payoutId))
-      .limit(1);
+  if (result.error) return { error: result.error };
 
-    if (payout.length) {
-      const balance = await db
-        .select()
-        .from(balances)
-        .where(eq(balances.userId, payout[0].userId))
-        .limit(1);
+  // B2C is async — Safaricom will confirm via ResultURL callback
+  // Mark as APPROVED for now; the callback will mark it PAID
+  await db.update(payoutRequests)
+    .set({
+      status:    'APPROVED',
+      adminNote: `B2C initiated to ${phone} — awaiting Safaricom confirmation`,
+    })
+    .where(eq(payoutRequests.id, payoutId));
 
-      if (balance.length) {
-        await db.update(balances)
-          .set({
-            paidOutTotal: String(
-              parseFloat(balance[0].paidOutTotal ?? '0') + amount
-            ),
-          })
-          .where(eq(balances.userId, payout[0].userId));
-      }
-    }
-
-    revalidatePath('/admin/payouts');
-    return { success: true };
-  } catch (err) {
-    console.error('[processPayoutViaMpesa]', err);
-    return { error: 'Failed to process payout' };
-  }
+  revalidatePath('/admin/payouts');
+  return { success: true };
 }
+
+
+
 
 export async function markPayoutPaid(payoutId: string, adminNote: string) {
   const auth = await getAuthUser();

@@ -107,6 +107,53 @@ export async function stkQuery(checkoutRequestId: string) {
   }
 }
 
+
+
+// ─── B2C: Send money to vendor/affiliate ─────────────────────────────────────
+export async function b2cPayout({
+  phone,
+  amount,
+  payoutId,
+  remarks,
+}: {
+  phone:    string;
+  amount:   number;
+  payoutId: string;
+  remarks?: string;
+}) {
+  try {
+    const token          = await getToken();
+    const formattedPhone = formatPhone(phone);
+
+    const res = await axios.post(
+      `${MPESA_BASE_URL}/mpesa/b2c/v3/paymentrequest`,
+      {
+        OriginatorConversationID: payoutId,           // your internal ID for tracing
+        InitiatorName:            process.env.MPESA_B2C_INITIATOR_NAME,
+        SecurityCredential:       process.env.MPESA_B2C_SECURITY_CREDENTIAL,
+        CommandID:                'BusinessPayment',  // for vendor/affiliate payouts
+        Amount:                   Math.ceil(amount),
+        PartyA:                   process.env.MPESA_B2C_SHORTCODE,
+        PartyB:                   formattedPhone,
+        Remarks:                  remarks ?? `Payout ${payoutId.slice(0, 8).toUpperCase()}`,
+        QueueTimeOutURL:          process.env.MPESA_B2C_TIMEOUT_URL,
+        ResultURL:                process.env.MPESA_B2C_RESULT_URL,
+        Occasion:                 'Payout',
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    return { data: res.data };
+  } catch (error) {
+    console.error('[b2cPayout error]', error);
+    if (error instanceof Error) return { error: error.message };
+    return { error: 'B2C payout request failed' };
+  }
+}
+
+
+
+
 // /**
 //  * AffilMarket Kenya — M-Pesa Daraja API Integration
 //  * Supports: STK Push (Lipa Na M-Pesa Online), Transaction Status, OAuth

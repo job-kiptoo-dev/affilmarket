@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "email:dev": "email dev",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -27,6 +28,7 @@
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-toast": "^1.1.5",
     "@radix-ui/react-tooltip": "^1.0.7",
+    "@react-email/components": "1.0.10",
     "@supabase/supabase-js": "^2.39.7",
     "@tanstack/react-query": "^5.24.1",
     "axios": "^1.13.6",
@@ -43,8 +45,8 @@
     "next": "^16.1.7",
     "next-themes": "^0.2.1",
     "postgres": "^3.4.8",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-hook-form": "^7.51.0",
     "recharts": "^2.12.1",
     "resend": "^3.5.0",
@@ -55,6 +57,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@react-email/preview-server": "5.2.10",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
@@ -64,6 +67,7 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.1.7",
     "postcss": "^8",
+    "react-email": "5.2.10",
     "tailwindcss": "^3.3.0",
     "tsx": "^4.7.1",
     "typescript": "^5"
