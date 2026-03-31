@@ -58,6 +58,7 @@ async function getProduct(slug: string) {
       vendorProfiles.shopName,
       vendorProfiles.description,
       vendorProfiles.logoUrl,
+      vendorProfiles.avgRating,
       categories.name,
     )
     .limit(1);
