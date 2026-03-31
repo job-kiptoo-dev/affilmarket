@@ -5,7 +5,8 @@ import {
   balances, affiliateProfiles,
 }                                    from '@/drizzle/schema';
 import { eq, and, lte, sql }         from 'drizzle-orm';
-import { sendDeliveryReminderEmail } from '@/lib/resend';
+import { sendDeliveryReminderEmail } from '@/lib/healpers/resend';
+// import { sendDeliveryReminderEmail } from '@/lib/resend';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yourdomain.com';
 
