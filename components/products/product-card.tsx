@@ -43,6 +43,7 @@ export function ProductCard({ product, showAffiliateLink, affiliateToken }: Prod
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard API blocked (e.g. non-HTTPS) — silently ignore
+
     }
   };
 
