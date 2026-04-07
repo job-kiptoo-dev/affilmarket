@@ -67,14 +67,6 @@ async function getProduct(slug: string) {
 }
 
 
-
-// Add import
-
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 export default async function ProductPage({
   params,
   searchParams,
@@ -237,7 +229,6 @@ export default async function ProductPage({
   </div>
 )}
 
-// Add reviews section at the bottom of pp-right, after description card:
 <ReviewsSection productId={product.id} />
 
               <div className="pp-price">{formatKES(price)}</div>
@@ -252,14 +243,22 @@ export default async function ProductPage({
                 <div className="pp-desc">{product.shortDescription}</div>
               )}
 
-              <BuyNowButton
-                productId={product.id}
-                productTitle={product.title}
-                price={price}
-                affToken={aff}
-                disabled={!inStock}
-                style={{ marginTop: 20 }}
-              />
+              {/* <BuyNowButton */}
+              {/*   productId={product.id} */}
+              {/*   productTitle={product.title} */}
+              {/*   price={price} */}
+              {/*   affToken={aff} */}
+              {/*   disabled={!inStock} */}
+              {/*   style={{ marginTop: 20 }} */}
+              {/* /> */}
+              {/**/}
+                <BuyNowButton
+  slug={product.slug}
+  price={price}
+  affToken={aff}
+/>
+
+
             </div>
 
             {/* Affiliate commission card — only when aff token present */}

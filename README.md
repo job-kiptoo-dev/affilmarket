@@ -247,4 +247,7 @@ Add all `.env.local` values to Railway environment variables.
 
 ---
 
+#issue  
+https://affilmarket.vercel.app/affiliate/products/set-iron-pot?aff=DEMO_JANE_2026
+
 *AffilMarket Kenya v0.1.0 — March 2026 | Confidential*

@@ -28,7 +28,7 @@ interface Props {
   initialCategory: string;
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL;
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 function commissionAmount(price: number, rate: number) {
   return (price * rate).toFixed(0);
@@ -62,7 +62,7 @@ export function AffiliateProductsClient({
   }, [products, search, category, sort, categories]);
 
   const copyLink = async (slug: string) => {
-    const url = `${BASE_URL}/affiliate/products/${slug}?aff=${affiliateToken}`;
+    const url = `${BASE_URL}/products/${slug}?aff=${affiliateToken}`;
     await navigator.clipboard.writeText(url);
     setCopied(slug);
     setTimeout(() => setCopied(null), 2000);
@@ -407,7 +407,7 @@ export function AffiliateProductsClient({
                       </button>
 
                       <a
-                        href={`/affiliate/products/${p.slug}`}
+                        href={`/products/${p.slug}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ap-btn-preview"
