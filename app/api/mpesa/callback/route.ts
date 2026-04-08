@@ -12,6 +12,7 @@ import {
 } from '@/drizzle/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { sendOrderConfirmationEmail } from '@/lib/resend';
+import { randomUUID } from 'crypto';
 
 // Safaricom IP whitelist
 const SAFARICOM_IPS = [
@@ -183,58 +184,139 @@ export async function POST(req: NextRequest) {
         .set({ orderId })
         .where(eq(mpesaTransactions.id, transaction.id));
 
-      // ── Credit Vendor ───────────────────────────────
-      const vendor = await db
-        .select({ userId: vendorProfiles.userId })
-        .from(vendorProfiles)
-        .where(eq(vendorProfiles.id, checkout.vendorId))
-        .limit(1);
 
-      if (vendor.length) {
-        await db.update(balances)
-          .set({
-            pendingBalance:
-              sql`${balances.pendingBalance} + ${vendorEarnings}`,
-          })
-          .where(eq(balances.userId, vendor[0].userId));
-      }
+        // ── Credit Vendor ───────────────────────────────
+// ── Credit Vendor ───────────────────────────────
+const vendor = await db
+  .select({ userId: vendorProfiles.userId })
+  .from(vendorProfiles)
+  .where(eq(vendorProfiles.id, checkout.vendorId))
+  .limit(1);
 
-      // ── Credit Affiliate ────────────────────────────
-      if (checkout.affiliateId && affiliateCommission > 0) {
-        const aff = await db
-          .select({ userId: affiliateProfiles.userId })
-          .from(affiliateProfiles)
-          .where(eq(affiliateProfiles.id, checkout.affiliateId))
-          .limit(1);
+if (vendor.length) {
+  await db
+    .insert(balances)
+    .values({
+            id:               randomUUID(),   // ← add this
+      userId:           vendor[0].userId,
+      pendingBalance:   String(vendorEarnings),
+      availableBalance: '0.00',
+      paidOutTotal:     '0.00',
+    })
+    .onConflictDoUpdate({
+      target: balances.userId,
+      set: {
+        pendingBalance: sql`${balances.pendingBalance} + ${vendorEarnings}`,
+      },
+    });
+}
 
-        if (aff.length) {
-          await db.update(balances)
-            .set({
-              pendingBalance:
-                sql`${balances.pendingBalance} + ${affiliateCommission}`,
-            })
-            .where(eq(balances.userId, aff[0].userId));
-        }
-      }
+// ── Credit Affiliate ────────────────────────────
+if (checkout.affiliateId && affiliateCommission > 0) {
+  const aff = await db
+    .select({ userId: affiliateProfiles.userId })
+    .from(affiliateProfiles)
+    .where(eq(affiliateProfiles.id, checkout.affiliateId))
+    .limit(1);
 
-      // ── Credit Platform ─────────────────────────────
-      const admin = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.role, 'ADMIN'))
-        .limit(1);
+  if (aff.length) {
+    await db
+      .insert(balances)
+      .values({
+        id:               randomUUID(),
+        userId:           aff[0].userId,
+        pendingBalance:   String(affiliateCommission),
+        availableBalance: '0.00',
+        paidOutTotal:     '0.00',
+      })
+      .onConflictDoUpdate({
+        target: balances.userId,
+        set: {
+          pendingBalance: sql`${balances.pendingBalance} + ${affiliateCommission}`,
+        },
+      });
+  }
+}
 
-      if (admin.length) {
-        await db.update(balances)
-          .set({
-            availableBalance:
-              sql`${balances.availableBalance} + ${platformFee}`,
-          })
-          .where(eq(balances.userId, admin[0].id));
-      }
+// ── Credit Platform (Admin) ─────────────────────
+const admin = await db
+  .select({ id: users.id })
+  .from(users)
+  .where(eq(users.role, 'ADMIN'))
+  .limit(1);
+
+if (admin.length) {
+  await db
+    .insert(balances)
+    .values({
+            id:               randomUUID(),   // ← add this
+      userId:           admin[0].id,
+      availableBalance: String(platformFee),  // admin gets it immediately, no pending
+      pendingBalance:   '0.00',
+      paidOutTotal:     '0.00',
+    })
+    .onConflictDoUpdate({
+      target: balances.userId,
+      set: {
+        availableBalance: sql`${balances.availableBalance} + ${platformFee}`,
+      },
+    });
+}
+
+      // // ── Credit Vendor ───────────────────────────────
+      // const vendor = await db
+      //   .select({ userId: vendorProfiles.userId })
+      //   .from(vendorProfiles)
+      //   .where(eq(vendorProfiles.id, checkout.vendorId))
+      //   .limit(1);
+      //
+      // if (vendor.length) {
+      //   await db.update(balances)
+      //     .set({
+      //       pendingBalance:
+      //         sql`${balances.pendingBalance} + ${vendorEarnings}`,
+      //     })
+      //     .where(eq(balances.userId, vendor[0].userId));
+      // }
+      //
+      // // ── Credit Affiliate ────────────────────────────
+      // if (checkout.affiliateId && affiliateCommission > 0) {
+      //   const aff = await db
+      //     .select({ userId: affiliateProfiles.userId })
+      //     .from(affiliateProfiles)
+      //     .where(eq(affiliateProfiles.id, checkout.affiliateId))
+      //     .limit(1);
+      //
+      //   if (aff.length) {
+      //     await db.update(balances)
+      //       .set({
+      //         pendingBalance:
+      //           sql`${balances.pendingBalance} + ${affiliateCommission}`,
+      //       })
+      //       .where(eq(balances.userId, aff[0].userId));
+      //   }
+      // }
+
+      // // ── Credit Platform ─────────────────────────────
+      // const admin = await db
+      //   .select({ id: users.id })
+      //   .from(users)
+      //   .where(eq(users.role, 'ADMIN'))
+      //   .limit(1);
+      //
+      // if (admin.length) {
+      //   await db.update(balances)
+      //     .set({
+      //       availableBalance:
+      //         sql`${balances.availableBalance} + ${platformFee}`,
+      //     })
+      //     .where(eq(balances.userId, admin[0].id));
+      // }
+
+      console.log('[email] checkout email:', checkout.customerEmail);
 
       // ── Send Email (non-blocking) ───────────────────
-      if (checkout.customerEmail) {
+      if (checkout.customerEmail ) {
         sendOrderConfirmationEmail({
           customerEmail: checkout.customerEmail,
           customerName: checkout.customerName,
