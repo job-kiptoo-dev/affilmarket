@@ -11,58 +11,14 @@ import {
   VendorOption,
   AffiliateOption,
 } from "@/action/AdminOrderAction";
+import { ORDER_FLOW, STATUS_META } from "@/types/admin-orders-client";
+import { fmt, fmtDate, timeAgo } from "@/lib/healpers/admin-orders-client";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_TABS: { label: string; value: AdminOrderStatus; color: string; dot: string }[] = [
-  { label: "All",       value: "ALL",       color: "#7c3aed", dot: "#7c3aed" },
-  { label: "Created",   value: "CREATED",   color: "#6b7280", dot: "#9ca3af" },
-  { label: "Paid",      value: "PAID",      color: "#2563eb", dot: "#3b82f6" },
-  { label: "Confirmed", value: "CONFIRMED", color: "#0891b2", dot: "#06b6d4" },
-  { label: "Shipped",   value: "SHIPPED",   color: "#d97706", dot: "#f59e0b" },
-  { label: "Delivered", value: "DELIVERED", color: "#16a34a", dot: "#22c55e" },
-  { label: "Cancelled", value: "CANCELLED", color: "#dc2626", dot: "#ef4444" },
-];
-
-const STATUS_META: Record<string, { bg: string; color: string; border: string; label: string; icon: string }> = {
-  CREATED:   { bg: "#f9fafb", color: "#374151", border: "#e5e7eb", label: "Created",   icon: "🕐" },
-  PAID:      { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe", label: "Paid",      icon: "💳" },
-  CONFIRMED: { bg: "#ecfeff", color: "#0e7490", border: "#a5f3fc", label: "Confirmed", icon: "✅" },
-  SHIPPED:   { bg: "#fffbeb", color: "#b45309", border: "#fde68a", label: "Shipped",   icon: "🚚" },
-  DELIVERED: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", label: "Delivered", icon: "📦" },
-  CANCELLED: { bg: "#fef2f2", color: "#b91c1c", border: "#fecaca", label: "Cancelled", icon: "✕"  },
-};
-
-const ORDER_FLOW = ["CREATED", "PAID", "CONFIRMED", "SHIPPED", "DELIVERED"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return `KSh ${n.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function fmtK(n: number) {
-  if (n >= 1_000_000) return `KSh ${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `KSh ${(n / 1_000).toFixed(1)}k`;
-  return fmt(n);
-}
-
-function fmtDate(date: Date) {
-  return new Date(date).toLocaleString("en-KE", {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function timeAgo(date: Date) {
-  const d = new Date(date);
-  const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return d.toLocaleDateString("en-KE", { day: "numeric", month: "short" });
-}
 
 // ─── Order Timeline ───────────────────────────────────────────────────────────
 

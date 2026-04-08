@@ -13,31 +13,7 @@ import {
   CheckCircle, XCircle, Phone, Building2,
   AlertCircle, Loader2, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { STATUS_STYLE, TABS } from '@/types/payout-client';
-
-interface Payout {
-  id:          string;
-  userId:      string;
-  role:        string;
-  amount:      number;
-  method:      string;
-  status:      string;
-  adminNote:   string | null;
-  createdAt:   string;
-  userName:    string | null;
-  userEmail:   string | null;
-  payoutPhone: string | null;
-  shopName:    string | null;
-  bankName:    string | null;
-  bankAccount: string | null;
-}
-
-interface Props {
-  payouts:      Payout[];
-  activeStatus: string;
-  counts:       Record<string, number>;
-}
-
+import { STATUS_STYLE, TABS, Props } from '@/types/payout-client';
 
 export function AdminPayoutsClient({ payouts, activeStatus, counts }: Props) {
   const router  = useRouter();

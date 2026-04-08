@@ -5,31 +5,9 @@ import {
   Plus, MessageSquare, ChevronDown, ChevronUp,
   CheckCircle2, AlertCircle, X, Loader2, Send,
 } from 'lucide-react';
+import { Dispute, Props } from '@/types/dipute-client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Message {
-  authorId:   string;
-  authorName: string;
-  body:       string;
-  createdAt:  string;
-}
-interface Dispute {
-  id:           string;
-  orderId:      string;
-  status:       string;            // 'open' | 'resolved'
-  messages:     Message[];
-  createdAt:    string;
-  updatedAt:    string;
-  openedByName: string;
-  customerName: string | null;
-  totalAmount:  string | null;
-}
-interface Props {
-  disputes:  Dispute[];
-  adminId:   string;
-  adminName: string;
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,3 +1,25 @@
+interface Payout {
+  id:          string;
+  userId:      string;
+  role:        string;
+  amount:      number;
+  method:      string;
+  status:      string;
+  adminNote:   string | null;
+  createdAt:   string;
+  userName:    string | null;
+  userEmail:   string | null;
+  payoutPhone: string | null;
+  shopName:    string | null;
+  bankName:    string | null;
+  bankAccount: string | null;
+}
+
+export interface Props {
+  payouts:      Payout[];
+  activeStatus: string;
+  counts:       Record<string, number>;
+}
 
 export const TABS = [
   { key: 'REQUESTED', label: 'Pending',  color: '#d97706' },

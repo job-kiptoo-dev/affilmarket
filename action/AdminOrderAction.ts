@@ -225,18 +225,84 @@ export async function adminCancelOrder(orderId: string): Promise<{ success: bool
   return { success: true };
 }
 
-export async function adminForceDeliver(orderId: string): Promise<{ success: boolean; error?: string }> {
+export async function adminForceDeliver(
+  orderId: string
+): Promise<{ success: boolean; error?: string }> {
   const user = await getAuthUser();
   if (!user || user.role !== "ADMIN") return { success: false, error: "Unauthorized" };
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
   if (!order) return { success: false, error: "Order not found" };
   if (order.orderStatus === "DELIVERED") return { success: false, error: "Already delivered" };
   if (order.orderStatus === "CANCELLED") return { success: false, error: "Order is cancelled" };
-  await db.update(orders).set({ orderStatus: "DELIVERED", updatedAt: new Date() }).where(eq(orders.id, orderId));
+
+  // guard — only release balances once
+  if (order.balancesReleased) return { success: false, error: "Balances already released" };
+
+  const vendorEarnings      = parseFloat(order.vendorEarnings      ?? "0");
+  const affiliateCommission = parseFloat(order.affiliateCommission ?? "0");
+
+  // ── Mark delivered + balancesReleased atomically ──
+  await db
+    .update(orders)
+    .set({
+      orderStatus:      "DELIVERED",
+      balancesReleased: true,
+      updatedAt:        new Date(),
+    })
+    .where(eq(orders.id, orderId));
+
+  // ── Move vendor pending → available ──
+  if (vendorEarnings > 0 && order.vendorId) {
+    const vendor = await db
+      .select({ userId: vendorProfiles.userId })
+      .from(vendorProfiles)
+      .where(eq(vendorProfiles.id, order.vendorId))
+      .limit(1);
+
+    if (vendor.length) {
+      await db
+        .update(balances)
+        .set({
+          availableBalance: sql`${balances.availableBalance} + ${vendorEarnings}`,
+          pendingBalance:   sql`${balances.pendingBalance}   - ${vendorEarnings}`,
+          updatedAt:        new Date(),
+        })
+        .where(eq(balances.userId, vendor[0].userId));
+    }
+  }
+
+  // ── Move affiliate pending → available ──
+  if (affiliateCommission > 0 && order.affiliateId) {
+    const aff = await db
+      .select({ userId: affiliateProfiles.userId })
+      .from(affiliateProfiles)
+      .where(eq(affiliateProfiles.id, order.affiliateId))
+      .limit(1);
+
+    if (aff.length) {
+      await db
+        .update(balances)
+        .set({
+          availableBalance: sql`${balances.availableBalance} + ${affiliateCommission}`,
+          pendingBalance:   sql`${balances.pendingBalance}   - ${affiliateCommission}`,
+          updatedAt:        new Date(),
+        })
+        .where(eq(balances.userId, aff[0].userId));
+    }
+  }
+
   revalidatePath("/admin/orders");
+  revalidatePath("/vendor/payouts");
+  revalidatePath("/vendor/earnings");
+  revalidatePath("/affiliate/payouts");
   return { success: true };
 }
-
 export async function adminAssignAffiliate(
   orderId: string,
   affiliateId: string | null
