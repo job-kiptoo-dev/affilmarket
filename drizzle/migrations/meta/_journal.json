@@ -36,6 +36,20 @@
       "when": 1774820364121,
       "tag": "0004_brief_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775707778475,
+      "tag": "0005_green_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775710611516,
+      "tag": "0006_certain_prima",
+      "breakpoints": true
     }
   ]
 }

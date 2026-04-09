@@ -1,0 +1,1 @@
+ALTER TABLE "affiliate_profiles" ADD COLUMN "is_onboarded" boolean DEFAULT false NOT NULL;

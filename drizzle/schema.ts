@@ -1,26 +1,27 @@
 import {
   pgTable, pgEnum, uuid, text, boolean, timestamp,
-  integer, decimal, json, uniqueIndex, index,
+  integer, decimal, json, index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // ─── ENUMS ───────────────────────────────────────────
-export const roleEnum = pgEnum('role', ['VENDOR', 'AFFILIATE', 'BOTH', 'ADMIN']);
-export const userStatusEnum = pgEnum('user_status', ['active', 'suspended', 'pending_verification']);
-export const vendorStatusEnum = pgEnum('vendor_status', ['pending', 'approved', 'rejected', 'suspended']);
-export const affiliateStatusEnum = pgEnum('affiliate_status', ['active', 'suspended', 'pending']);
-export const productStatusEnum = pgEnum('product_status', ['draft', 'pending_approval', 'active', 'rejected', 'inactive']);
-export const paymentStatusEnum = pgEnum('payment_status', ['PENDING', 'PAID', 'FAILED', 'REFUNDED']);
-export const orderStatusEnum = pgEnum('order_status', ['CREATED', 'PAID', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED']);
-export const payoutMethodEnum = pgEnum('payout_method', ['MPESA', 'BANK']);
-export const payoutStatusEnum = pgEnum('payout_status', ['REQUESTED', 'APPROVED', 'PAID', 'REJECTED']);
-export const payoutRoleEnum = pgEnum('payout_role', ['VENDOR', 'AFFILIATE']);
-export const disputeStatusEnum = pgEnum('dispute_status', ['open', 'resolved']);
-export const mpesaStatusEnum = pgEnum('mpesa_transaction_status', ['PENDING', 'SUCCESS', 'FAILED', 'TIMEOUT']);
+export const roleEnum             = pgEnum('role',                       ['VENDOR', 'AFFILIATE', 'BOTH', 'ADMIN']);
+export const userStatusEnum       = pgEnum('user_status',                ['active', 'suspended', 'pending_verification']);
+export const vendorStatusEnum     = pgEnum('vendor_status',              ['pending', 'approved', 'rejected', 'suspended']);
+export const affiliateStatusEnum  = pgEnum('affiliate_status',           ['active', 'suspended', 'pending']);
+export const productStatusEnum    = pgEnum('product_status',             ['draft', 'pending_approval', 'active', 'rejected', 'inactive']);
+export const paymentStatusEnum    = pgEnum('payment_status',             ['PENDING', 'PAID', 'FAILED', 'REFUNDED']);
+export const orderStatusEnum      = pgEnum('order_status',               ['CREATED', 'PAID', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED']);
+export const payoutMethodEnum     = pgEnum('payout_method',              ['MPESA', 'BANK']);
+export const payoutStatusEnum     = pgEnum('payout_status',              ['REQUESTED', 'APPROVED', 'PAID', 'REJECTED']);
+export const payoutRoleEnum       = pgEnum('payout_role',                ['VENDOR', 'AFFILIATE']);
+export const disputeStatusEnum    = pgEnum('dispute_status',             ['open', 'resolved']);
+export const mpesaStatusEnum      = pgEnum('mpesa_transaction_status',   ['PENDING', 'SUCCESS', 'FAILED', 'TIMEOUT']);
 
 // ─── USERS ───────────────────────────────────────────
+// Better Auth generates text IDs, not UUIDs
 export const users = pgTable('users', {
-  id:            uuid('id').primaryKey(),
+  id:            text('id').primaryKey(),                          // ← text (Better Auth)
   name:          text('name').notNull(),
   email:         text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
@@ -34,36 +35,36 @@ export const users = pgTable('users', {
 
 // ─── SESSIONS ────────────────────────────────────────
 export const sessions = pgTable('sessions', {
-  id:        uuid('id').primaryKey(),
+  id:        text('id').primaryKey(),                              // ← text (Better Auth)
   expiresAt: timestamp('expires_at').notNull(),
   token:     text('token').notNull().unique(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().$onUpdate(() => new Date()),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId:    text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), // ← text
 });
 
 // ─── ACCOUNTS ────────────────────────────────────────
 export const accounts = pgTable('accounts', {
-  id:                   uuid('id').primaryKey(),
-  accountId:            text('account_id').notNull(),
-  providerId:           text('provider_id').notNull(),
-  userId:               uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  accessToken:text('access_token'),
-  refreshToken:         text('refresh_token'),
-  idToken:              text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
+  id:                    text('id').primaryKey(),                  // ← text (Better Auth)
+  accountId:             text('account_id').notNull(),
+  providerId:            text('provider_id').notNull(),
+  userId:                text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), // ← text
+  accessToken:           text('access_token'),
+  refreshToken:          text('refresh_token'),
+  idToken:               text('id_token'),
+  accessTokenExpiresAt:  timestamp('access_token_expires_at'),
   refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope:                text('scope'),
-  password:             text('password'),
-  createdAt:            timestamp('created_at').notNull().defaultNow(),
-  updatedAt:            timestamp('updated_at').notNull().$onUpdate(() => new Date()),
+  scope:                 text('scope'),
+  password:              text('password'),
+  createdAt:             timestamp('created_at').notNull().defaultNow(),
+  updatedAt:             timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
 
 // ─── VERIFICATIONS ───────────────────────────────────
 export const verifications = pgTable('verifications', {
-  id:         uuid('id').primaryKey(),
+  id:         text('id').primaryKey(),                             // ← text (Better Auth)
   identifier: text('identifier').notNull(),
   value:      text('value').notNull(),
   expiresAt:  timestamp('expires_at').notNull(),
@@ -73,29 +74,29 @@ export const verifications = pgTable('verifications', {
 
 // ─── VENDOR PROFILES ─────────────────────────────────
 export const vendorProfiles = pgTable('vendor_profiles', {
-  id:          uuid('id').primaryKey(),
-  userId:      uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
-  shopName:    text('shop_name').notNull(),
-  legalName:   text('legal_name'),
-  phone:       text('phone'),
-  shopAddress: json('shop_address'),
-  kraPin:      text('kra_pin'),
-  kraPinDoc:   text('kra_pin_doc'),
-  logoUrl:     text('logo_url'),
-  description: text('description'),
-  suspendedAt:     timestamp('suspended_at'),
-suspendedReason: text('suspended_reason'),
-  status:      vendorStatusEnum('status').notNull().default('pending'),
-  isOnboarded: boolean('is_onboarded').default(false).notNull(),
-  avgRating:   decimal('avg_rating', { precision: 3, scale: 2 }),
-  createdAt:   timestamp('created_at').notNull().defaultNow(),
-  updatedAt:   timestamp('updated_at').notNull().$onUpdate(() => new Date()),
+  id:             uuid('id').primaryKey(),
+  userId:         text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }), // ← text
+  shopName:       text('shop_name').notNull(),
+  legalName:      text('legal_name'),
+  phone:          text('phone'),
+  shopAddress:    json('shop_address'),
+  kraPin:         text('kra_pin'),
+  kraPinDoc:      text('kra_pin_doc'),
+  logoUrl:        text('logo_url'),
+  description:    text('description'),
+  suspendedAt:    timestamp('suspended_at'),
+  suspendedReason: text('suspended_reason'),
+  status:         vendorStatusEnum('status').notNull().default('pending'),
+  isonboarded:    boolean('is_onboarded').default(false).notNull(),
+  avgRating:      decimal('avg_rating', { precision: 3, scale: 2 }),
+  createdAt:      timestamp('created_at').notNull().defaultNow(),
+  updatedAt:      timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
 
 // ─── AFFILIATE PROFILES ──────────────────────────────
 export const affiliateProfiles = pgTable('affiliate_profiles', {
   id:                uuid('id').primaryKey(),
-  userId:            uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  userId:            text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }), // ← text
   fullName:          text('full_name').notNull(),
   phone:             text('phone'),
   affiliateToken:    text('affiliate_token').notNull().unique(),
@@ -105,10 +106,9 @@ export const affiliateProfiles = pgTable('affiliate_profiles', {
   bankAccountName:   text('bank_account_name'),
   bankAccountNumber: text('bank_account_number'),
   idNumber:          text('id_number'),
-   
-suspendedAt:     timestamp('suspended_at'),
-suspendedReason: text('suspended_reason'),
-
+  isOnboarded:       boolean('is_onboarded').default(false).notNull(),
+  suspendedAt:       timestamp('suspended_at'),
+  suspendedReason:   text('suspended_reason'),
   status:            affiliateStatusEnum('status').notNull().default('pending'),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().$onUpdate(() => new Date()),
@@ -126,25 +126,25 @@ export const categories = pgTable('categories', {
 
 // ─── PRODUCTS ────────────────────────────────────────
 export const products = pgTable('products', {
-  id:                     uuid('id').primaryKey(),
-  vendorId:               uuid('vendor_id').notNull().references(() => vendorProfiles.id),
-  title:                  text('title').notNull(),
-  slug:                   text('slug').notNull().unique(),
-  shortDescription:       text('short_description'),
-  description:            text('description'),
-  categoryId:             uuid('category_id').references(() => categories.id),
-  subcategoryId:          uuid('subcategory_id').references(() => categories.id),
-  sku:                    text('sku'),
-  price:                  decimal('price', { precision: 10, scale: 2 }).notNull(),
-  stockQuantity:          integer('stock_quantity').notNull().default(0),
-  mainImageUrl:           text('main_image_url'),
-  galleryImages:          json('gallery_images'),
+  id:                      uuid('id').primaryKey(),
+  vendorId:                uuid('vendor_id').notNull().references(() => vendorProfiles.id),
+  title:                   text('title').notNull(),
+  slug:                    text('slug').notNull().unique(),
+  shortDescription:        text('short_description'),
+  description:             text('description'),
+  categoryId:              uuid('category_id').references(() => categories.id),
+  subcategoryId:           uuid('subcategory_id').references(() => categories.id),
+  sku:                     text('sku'),
+  price:                   decimal('price', { precision: 10, scale: 2 }).notNull(),
+  stockQuantity:           integer('stock_quantity').notNull().default(0),
+  mainImageUrl:            text('main_image_url'),
+  galleryImages:           json('gallery_images'),
   affiliateCommissionRate: decimal('affiliate_commission_rate', { precision: 4, scale: 3 }).notNull().default('0.10'),
-  status:                 productStatusEnum('status').notNull().default('draft'),
-  country:                text('country').notNull().default('KE'),
-  adminNote:              text('admin_note'),
-  createdAt:              timestamp('created_at').notNull().defaultNow(),
-  updatedAt:              timestamp('updated_at').notNull().$onUpdate(() => new Date()),
+  status:                  productStatusEnum('status').notNull().default('draft'),
+  country:                 text('country').notNull().default('KE'),
+  adminNote:               text('admin_note'),
+  createdAt:               timestamp('created_at').notNull().defaultNow(),
+  updatedAt:               timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
 
 // ─── ORDERS ──────────────────────────────────────────
@@ -180,26 +180,22 @@ export const orders = pgTable('orders', {
 });
 
 // ─── MPESA TRANSACTIONS ──────────────────────────────
-  
-
-
 export const mpesaTransactions = pgTable('mpesa_transactions', {
-  id:                uuid('id').primaryKey().defaultRandom(),
-  orderId:           uuid('order_id').references(() => orders.id), // ← remove .notNull()
-  checkoutRequestId: text('checkout_request_id').unique(),
-  merchantRequestId: text('merchant_request_id'),
-  phoneNumber:       text('phone_number').notNull(),
-  amount:            decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  status:            mpesaStatusEnum('status').notNull().default('PENDING'),
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  orderId:            uuid('order_id').references(() => orders.id),
+  checkoutRequestId:  text('checkout_request_id').unique(),
+  merchantRequestId:  text('merchant_request_id'),
+  phoneNumber:        text('phone_number').notNull(),
+  amount:             decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  status:             mpesaStatusEnum('status').notNull().default('PENDING'),
   mpesaReceiptNumber: text('mpesa_receipt_number'),
-  resultCode:        integer('result_code'),
-  resultDesc:        text('result_desc'),
-  rawCallback:       json('raw_callback'),
-  checkoutMetadata:  json('checkout_metadata'), // ← add this
-  createdAt:         timestamp('created_at').notNull().defaultNow(),
-  updatedAt:         timestamp('updated_at').notNull().$onUpdate(() => new Date()),
+  resultCode:         integer('result_code'),
+  resultDesc:         text('result_desc'),
+  rawCallback:        json('raw_callback'),
+  checkoutMetadata:   json('checkout_metadata'),
+  createdAt:          timestamp('created_at').notNull().defaultNow(),
+  updatedAt:          timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
-
 
 // ─── AFFILIATE CLICKS ────────────────────────────────
 export const affiliateClicks = pgTable('affiliate_clicks', {
@@ -230,17 +226,17 @@ export const reviews = pgTable('reviews', {
 // ─── BALANCES ────────────────────────────────────────
 export const balances = pgTable('balances', {
   id:               uuid('id').primaryKey(),
-  userId:           uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
-  pendingBalance:   decimal('pending_balance', { precision: 10, scale: 2 }).notNull().default('0'),
+  userId:           text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }), // ← text
+  pendingBalance:   decimal('pending_balance',   { precision: 10, scale: 2 }).notNull().default('0'),
   availableBalance: decimal('available_balance', { precision: 10, scale: 2 }).notNull().default('0'),
-  paidOutTotal:     decimal('paid_out_total', { precision: 10, scale: 2 }).notNull().default('0'),
+  paidOutTotal:     decimal('paid_out_total',    { precision: 10, scale: 2 }).notNull().default('0'),
   updatedAt:        timestamp('updated_at').notNull().$onUpdate(() => new Date()),
 });
 
 // ─── PAYOUT REQUESTS ─────────────────────────────────
 export const payoutRequests = pgTable('payout_requests', {
   id:        uuid('id').primaryKey(),
-  userId:    uuid('user_id').notNull().references(() => users.id),
+  userId:    text('user_id').notNull().references(() => users.id), // ← text
   role:      payoutRoleEnum('role').notNull(),
   amount:    decimal('amount', { precision: 10, scale: 2 }).notNull(),
   method:    payoutMethodEnum('method').notNull(),
@@ -261,7 +257,7 @@ export const platformSettings = pgTable('platform_settings', {
 export const disputeTickets = pgTable('dispute_tickets', {
   id:         uuid('id').primaryKey(),
   orderId:    uuid('order_id').notNull().references(() => orders.id),
-  openedById: uuid('opened_by_id').notNull().references(() => users.id),
+  openedById: text('opened_by_id').notNull().references(() => users.id), // ← text
   messages:   json('messages').notNull().default([]),
   status:     disputeStatusEnum('status').notNull().default('open'),
   createdAt:  timestamp('created_at').notNull().defaultNow(),
@@ -270,9 +266,9 @@ export const disputeTickets = pgTable('dispute_tickets', {
 
 // ─── RELATIONS ───────────────────────────────────────
 export const usersRelations = relations(users, ({ one, many }) => ({
-  vendorProfile:    one(vendorProfiles, { fields: [users.id], references: [vendorProfiles.userId] }),
+  vendorProfile:    one(vendorProfiles,   { fields: [users.id], references: [vendorProfiles.userId] }),
   affiliateProfile: one(affiliateProfiles, { fields: [users.id], references: [affiliateProfiles.userId] }),
-  balance:          one(balances, { fields: [users.id], references: [balances.userId] }),
+  balance:          one(balances,          { fields: [users.id], references: [balances.userId] }),
   sessions:         many(sessions),
   accounts:         many(accounts),
   payoutRequests:   many(payoutRequests),
@@ -282,24 +278,25 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
   parent:      one(categories, { fields: [categories.parentId], references: [categories.id], relationName: 'CategoryTree' }),
   children:    many(categories, { relationName: 'CategoryTree' }),
-  products:    many(products, { relationName: 'ProductCategory' }),
-  subProducts: many(products, { relationName: 'ProductSubcategory' }),
+  products:    many(products,   { relationName: 'ProductCategory' }),
+  subProducts: many(products,   { relationName: 'ProductSubcategory' }),
 }));
 
 export const productsRelations = relations(products, ({ one, many }) => ({
-  vendor:      one(vendorProfiles, { fields: [products.vendorId], references: [vendorProfiles.id] }),
-  category:    one(categories, { fields: [products.categoryId], references: [categories.id], relationName: 'ProductCategory' }),
-  subcategory: one(categories, { fields: [products.subcategoryId], references: [categories.id], relationName: 'ProductSubcategory' }),
+  vendor:      one(vendorProfiles, { fields: [products.vendorId],      references: [vendorProfiles.id] }),
+  category:    one(categories,     { fields: [products.categoryId],    references: [categories.id], relationName: 'ProductCategory' }),
+  subcategory: one(categories,     { fields: [products.subcategoryId], references: [categories.id], relationName: 'ProductSubcategory' }),
   orders:      many(orders),
   clicks:      many(affiliateClicks),
   reviews:     many(reviews),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
-  vendor:           one(vendorProfiles, { fields: [orders.vendorId], references: [vendorProfiles.id] }),
-  affiliate:        one(affiliateProfiles, { fields: [orders.affiliateId], references: [affiliateProfiles.id] }),
-  product:          one(products, { fields: [orders.productId], references: [products.id] }),
-  review:           one(reviews),
-  disputes:         many(disputeTickets),
+  vendor:            one(vendorProfiles,   { fields: [orders.vendorId],    references: [vendorProfiles.id] }),
+  affiliate:         one(affiliateProfiles, { fields: [orders.affiliateId], references: [affiliateProfiles.id] }),
+  product:           one(products,          { fields: [orders.productId],   references: [products.id] }),
+  review:            one(reviews),
+  disputes:          many(disputeTickets),
   mpesaTransactions: many(mpesaTransactions),
 }));
+

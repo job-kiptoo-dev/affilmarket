@@ -12,8 +12,9 @@ import {
   affiliateProfiles,
   products,
   mpesaTransactions,
+  balances,
 } from "@/drizzle/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/healpers/auth-server";
 

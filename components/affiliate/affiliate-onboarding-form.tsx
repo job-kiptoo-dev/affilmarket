@@ -89,6 +89,7 @@ export function AffiliateOnboardingForm() {
   const onSubmit = async (data: FormData) => {
     setServerError('');
     setIsSubmitting(true);
+      console.log('[onboarding] submitting:', data); 
     const result = await submitAffiliateOnboarding(data);
     setIsSubmitting(false);
 
@@ -98,7 +99,8 @@ export function AffiliateOnboardingForm() {
     }
 
     setLaunched(true);
-    setTimeout(() => router.push('/affiliate'), 2500);
+    setTimeout(() => router.push('/affiliate'), 2500)
+
   };
 
   // ── Launched screen ──────────────────────────────────────

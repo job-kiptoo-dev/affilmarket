@@ -5,18 +5,47 @@ import { affiliateProfiles } from '@/drizzle/schema';
 import { eq }                from 'drizzle-orm';
 import { AffiliateOnboardingForm } from '@/components/affiliate/affiliate-onboarding-form';
 
+
+
+
+
+
 export default async function AffiliateOnboardingPage() {
   const auth = await getAuthUser();
-  if (!auth || !['AFFILIATE', 'BOTH', 'ADMIN'].includes(auth.role)) redirect('/login');
 
-  // Already onboarded → go to dashboard
+  // not logged in → login
+  if (!auth) redirect('/login');
+
   const existing = await db
-    .select({ id: affiliateProfiles.id })
+    .select({
+      id:          affiliateProfiles.id,
+      isOnboarded: affiliateProfiles.isOnboarded,
+    })
     .from(affiliateProfiles)
     .where(eq(affiliateProfiles.userId, auth.sub))
     .limit(1);
 
-  if (existing.length) redirect('/affiliate');
+  // already fully onboarded → go to dashboard
+  if (existing.length && existing[0].isOnboarded) {
+    redirect('/affiliate');
+  }
 
   return <AffiliateOnboardingForm />;
 }
+
+
+// export default async function AffiliateOnboardingPage() {
+//   const auth = await getAuthUser();
+//   if (!auth || !['AFFILIATE', 'BOTH', 'ADMIN'].includes(auth.role)) redirect('/login');
+//
+//   // Already onboarded → go to dashboard
+//   const existing = await db
+//     .select({ id: affiliateProfiles.id })
+//     .from(affiliateProfiles)
+//     .where(eq(affiliateProfiles.userId, auth.sub))
+//     .limit(1);
+//
+//   if (existing.length) redirect('/affiliate');
+//
+//   return <AffiliateOnboardingForm />;
+// }

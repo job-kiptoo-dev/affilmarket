@@ -23,132 +23,171 @@ async function getAffiliateData(userId: string) {
     .where(eq(affiliateProfiles.userId, userId))
     .limit(1);
 
-  if (!profile.length) return null;
+  // no profile yet → not onboarded
+  if (!profile.length) {
+    return { status: 'not_onboarded' } as const;
+  }
+
   const aff = profile[0];
 
-  // const [clickCount, orderCount, balance, recentCommissions, clicksOverTime] = await Promise.all([
+  // suspended
+  if (aff.status === 'suspended') {
+    return { status: 'suspended' } as const;
+  }
 
-const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topProducts] = await Promise.all([
+  // still pending
+  if (aff.status !== 'active') {
+    return { status: 'pending' } as const;
+  }
 
+  const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topProducts] =
+    await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(affiliateClicks)
+        .where(eq(affiliateClicks.affiliateId, aff.id)),
 
-    // click count
-    db.select({ count: sql<number>`count(*)::int` })
-      .from(affiliateClicks)
-      .where(eq(affiliateClicks.affiliateId, aff.id)),
+      db.select({ count: sql<number>`count(*)::int` })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.affiliateId, aff.id),
+          eq(ordersTable.paymentStatus, 'PAID'),
+        )),
 
-    // paid order count
-    db.select({ count: sql<number>`count(*)::int` })
-      .from(ordersTable)
+      db.select()
+        .from(balances)
+        .where(eq(balances.userId, userId))
+        .limit(1),
 
+      db.select({
+        id: ordersTable.id,
+        createdAt: ordersTable.createdAt,
+        totalAmount: ordersTable.totalAmount,
+        affiliateCommission: ordersTable.affiliateCommission,
+        balancesReleased: ordersTable.balancesReleased,
+        productTitle: productsTable.title,
+      })
+        .from(ordersTable)
+        .leftJoin(productsTable, eq(ordersTable.productId, productsTable.id))
+        .where(and(
+          eq(ordersTable.affiliateId, aff.id),
+          eq(ordersTable.paymentStatus, 'PAID'),
+        ))
+        .orderBy(sql`${ordersTable.createdAt} desc`)
+        .limit(10),
 
-      .where(and(
-  eq(ordersTable.affiliateId, aff.id),
-  eq(ordersTable.paymentStatus, 'PAID')
-)),
-
-    // balance
-    db.select()
-      .from(balances)
-      .where(eq(balances.userId, userId))
-      .limit(1),
-
-    // recent commissions with product title
-    db.select({
-      id:                 ordersTable.id,
-      createdAt:          ordersTable.createdAt,
-      totalAmount:        ordersTable.totalAmount,
-      affiliateCommission: ordersTable.affiliateCommission,
-      balancesReleased:   ordersTable.balancesReleased,
-      productTitle:       productsTable.title,
-    })
-      .from(ordersTable)
-      .leftJoin(productsTable, eq(ordersTable.productId, productsTable.id))
-
-      .where(and(
-  eq(ordersTable.affiliateId, aff.id),
-  eq(ordersTable.paymentStatus, 'PAID')
-))
-
-      .orderBy(sql`${ordersTable.createdAt} desc`)
-      .limit(10),
-
-    // clicks over time – raw SQL
-    db.execute(sql`
-      SELECT
-        TO_CHAR(created_at, 'Mon YY') AS month,
-        COUNT(*)::float               AS total,
-        COUNT(*)::int                 AS count
-      FROM affiliate_clicks
-      WHERE affiliate_id = ${aff.id}
+      db.execute(sql`
+        SELECT
+          TO_CHAR(created_at, 'Mon YY') AS month,
+          COUNT(*)::float AS total,
+          COUNT(*)::int AS count
+        FROM affiliate_clicks
+        WHERE affiliate_id = ${aff.id}
         AND created_at >= NOW() - INTERVAL '6 months'
-      GROUP BY DATE_TRUNC('month', created_at), TO_CHAR(created_at, 'Mon YY')
-      ORDER BY DATE_TRUNC('month', created_at)
-    `),
-  db.select({
-      productId:    affiliateClicks.productId,
-      productTitle: productsTable.title,
-      productSlug:  productsTable.slug,
-      productImage: productsTable.mainImageUrl,
-      clicks:       sql<number>`count(*)::int`,
-      price:        productsTable.price,
-      commRate:     productsTable.affiliateCommissionRate,
-    })
-      .from(affiliateClicks)
-      .leftJoin(productsTable, eq(affiliateClicks.productId, productsTable.id))
-      .where(eq(affiliateClicks.affiliateId, aff.id))
-      .groupBy(
-        affiliateClicks.productId,
-        productsTable.title,
-        productsTable.slug,
-        productsTable.mainImageUrl,
-        productsTable.price,
-        productsTable.affiliateCommissionRate,
-      )
-      .orderBy(sql`count(*) desc`)
-      .limit(5),
-  ]);
+        GROUP BY DATE_TRUNC('month', created_at), TO_CHAR(created_at, 'Mon YY')
+        ORDER BY DATE_TRUNC('month', created_at)
+      `),
 
+      db.select({
+        productId: affiliateClicks.productId,
+        productTitle: productsTable.title,
+        productSlug: productsTable.slug,
+        productImage: productsTable.mainImageUrl,
+        clicks: sql<number>`count(*)::int`,
+        price: productsTable.price,
+        commRate: productsTable.affiliateCommissionRate,
+      })
+        .from(affiliateClicks)
+        .leftJoin(productsTable, eq(affiliateClicks.productId, productsTable.id))
+        .where(eq(affiliateClicks.affiliateId, aff.id))
+        .groupBy(
+          affiliateClicks.productId,
+          productsTable.title,
+          productsTable.slug,
+          productsTable.mainImageUrl,
+          productsTable.price,
+          productsTable.affiliateCommissionRate,
+        )
+        .orderBy(sql`count(*) desc`)
+        .limit(5),
+    ]);
 
+  let bal = balance[0] ?? null;
+
+  if (!bal) {
+    const [created] = await db
+      .insert(balances)
+      .values({
+        id: crypto.randomUUID(),
+        userId,
+        availableBalance: '0.00',
+        pendingBalance: '0.00',
+        paidOutTotal: '0.00',
+      })
+      .returning();
+
+    bal = created;
+  }
 
   return {
-  profile:           aff,
-  clickCount:        clickCount[0]?.count ?? 0,
-  orderCount:        orderCount[0]?.count ?? 0,
-  balance:           balance[0]           ?? null,
-  recentCommissions,
-  clicksOverTime:    clicksOverTime as any[],
-  topProducts:       topProducts ?? [],  // ← ADD THIS
-};
-
-
-  // return {
-  //   profile:           aff,
-  //   clickCount:        clickCount[0]?.count ?? 0,
-  //   orderCount:        orderCount[0]?.count ?? 0,
-  //   balance:           balance[0] ?? null,
-  //   recentCommissions,
-  //   clicksOverTime:    clicksOverTime as any[],
-  // };
+    status: 'active',
+    profile: aff,
+    clickCount: clickCount[0]?.count ?? 0,
+    orderCount: orderCount[0]?.count ?? 0,
+    balance: bal,
+    recentCommissions,
+    clicksOverTime: clicksOverTime as any[],
+    topProducts: topProducts ?? [],
+  } as const;
 }
-
 export default async function AffiliateDashboardPage() {
-  const auth = await getAuthUser();
-  if (!auth || !['AFFILIATE', 'BOTH', 'ADMIN'].includes(auth.role)) redirect('/login');
+
+
+ const auth = await getAuthUser();
+  if (!auth || !['AFFILIATE', 'BOTH', 'ADMIN'].includes(auth.role)) {
+    redirect('/login');
+  }
 
   const data = await getAffiliateData(auth.sub);
+
+  // ── 1. No profile at all → onboarding
   if (!data) redirect('/affiliate/onboarding');
 
-  const conversionRate =
-    data.clickCount > 0 ? ((data.orderCount / data.clickCount) * 100).toFixed(1) : '0.0';
+
+  // ── 2. Suspended → show message (check BEFORE active check)
+  if ('suspended' in data && data.suspended) {
+    return (
+      <DashboardShell role="AFFILIATE" vendorName={auth.name}>
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🚫</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+            Account Suspended
+          </h2>
+          <p style={{ color: '#6b7280', fontSize: 14 }}>
+            Your affiliate account has been suspended.
+            Please contact support for assistance.
+          </p>
+        </div>
+      </DashboardShell>
+    );
+  }
+
+  // ── 3. Not active → onboarding
+  if (data.status !== 'active') redirect('/affiliate/onboarding');
+
+  // ── 4. Safe to use all data from here ──
+  const conversionRate   = data.clickCount > 0
+    ? ((data.orderCount / data.clickCount) * 100).toFixed(1)
+    : '0.0';
 
   const pendingBalance   = parseFloat(data.balance?.pendingBalance   ?? '0');
   const availableBalance = parseFloat(data.balance?.availableBalance ?? '0');
-  const totalEarned      = data.recentCommissions.reduce(
-    (sum, o) => sum + parseFloat(o.affiliateCommission ?? '0'), 0
+
+  const totalEarned = data.recentCommissions.reduce(
+    (sum, o) => sum + parseFloat(o.affiliateCommission ?? '0'), 0,
   );
 
-
   const firstName = data.profile.fullName.split(' ')[0];
+
 
   return (
     <>
