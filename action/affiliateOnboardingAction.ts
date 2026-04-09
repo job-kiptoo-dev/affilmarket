@@ -60,32 +60,74 @@ export async function submitAffiliateOnboarding(formData: unknown) {
     return { error: 'Bank details required' };
   }
 
+
+  
+    if (existing.length) {
+    // ── Profile exists — just update it, never touch the token ──
+    await db
+      .update(affiliateProfiles)
+      .set({
+        fullName,
+        phone,
+        idNumber:         idNumber ?? null,
+        payoutMethod,
+        mpesaPhone:       mpesaPhone ?? phone,
+        bankName:         bankName ?? null,
+        bankAccountName:  bankAccountName ?? null,
+        bankAccountNumber: bankAccountNumber ?? null,
+        status:           'active',
+        isOnboarded:      true,
+      })
+      .where(eq(affiliateProfiles.userId, auth.sub));
+  } else {
+    // ── No profile — create fresh with a new token ──
+    await db.insert(affiliateProfiles).values({
+      id:               crypto.randomUUID(),
+      userId:           auth.sub,
+      fullName,
+      phone,
+      idNumber:         idNumber ?? null,
+      affiliateToken:   generateAffiliateToken(), // only on fresh insert
+      payoutMethod,
+      mpesaPhone:       mpesaPhone ?? phone,
+      bankName:         bankName ?? null,
+      bankAccountName:  bankAccountName ?? null,
+      bankAccountNumber: bankAccountNumber ?? null,
+      status:           'active',
+      isOnboarded:      true,
+    });
+  }
+
+
+
+
+
   // ── 1. Create affiliate profile ──
-  await db.insert(affiliateProfiles).values({
-    id:               crypto.randomUUID(),
-    userId:           auth.sub,
-    fullName,
-    phone,
-    idNumber:         idNumber ?? null,
-    affiliateToken:   generateAffiliateToken(),
-    payoutMethod,
-    mpesaPhone:       mpesaPhone ?? phone,
-    bankName:         bankName ?? null,
-    bankAccountName:  bankAccountName ?? null,
-    bankAccountNumber: bankAccountNumber ?? null,
-    status:           'active',
-    isOnboarded:      true,   // ← NEW
-  })
-.onConflictDoUpdate({
-  target: affiliateProfiles.userId,  // ← if userId already exists
-  set: {
-    isOnboarded: true,
-    status:      'active',
-    fullName,
-    phone,
-    mpesaPhone:  mpesaPhone ?? phone,
-  },
-})
+//   await db.insert(affiliateProfiles).values({
+//     id:               crypto.randomUUID(),
+//     userId:           auth.sub,
+//     fullName,
+//     phone,
+//     idNumber:         idNumber ?? null,
+//     affiliateToken:   generateAffiliateToken(),
+//     payoutMethod,
+//     mpesaPhone:       mpesaPhone ?? phone,
+//     bankName:         bankName ?? null,
+//     bankAccountName:  bankAccountName ?? null,
+//     bankAccountNumber: bankAccountNumber ?? null,
+//     status:           'active',
+//     isOnboarded:      true,   // ← NEW
+//   })
+// .onConflictDoUpdate({
+//   target: affiliateProfiles.userId,  // ← if userId already exists
+//   set: {
+//     isOnboarded: true,
+//     status:      'active',
+//     fullName,
+//     phone,
+//     mpesaPhone:  mpesaPhone ?? phone,
+//   },
+// })
   ;
 
   // ── 2. Update user role ── ← NEW
