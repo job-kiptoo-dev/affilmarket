@@ -1,11 +1,4 @@
 import { getAuthUser }       from '@/lib/healpers/auth-server';
-import { db }                from '@/lib/utils/db';
-import {
-  affiliateProfiles, affiliateClicks, orders as ordersTable,
-  balances, products as productsTable,
-  products,
-} from '@/drizzle/schema';
-import { and, eq, sql }           from 'drizzle-orm';
 import { redirect }          from 'next/navigation';
 import { formatKES }         from '@/lib/utils';
 import { DashboardShell }    from '@/components/dashboard/dashboard-shell';
@@ -15,139 +8,18 @@ import {
   MousePointer, ShoppingBag, Wallet, TrendingUp,
   Copy, ExternalLink, ArrowUpRight,
 } from 'lucide-react';
+import { getAffiliateData } from '@/components/affiliate/Affiliatedata/getAffiliatedata';
 
-async function getAffiliateData(userId: string) {
-  const profile = await db
-    .select()
-    .from(affiliateProfiles)
-    .where(eq(affiliateProfiles.userId, userId))
-    .limit(1);
 
-  // no profile yet → not onboarded
-  if (!profile.length) {
-    return { status: 'not_onboarded' } as const;
-  }
 
-  const aff = profile[0];
-
-  // suspended
-  if (aff.status === 'suspended') {
-    return { status: 'suspended' } as const;
-  }
-
-  // still pending
-  if (aff.status !== 'active') {
-    return { status: 'pending' } as const;
-  }
-
-  const [clickCount, orderCount, balance, recentCommissions, clicksOverTime, topProducts] =
-    await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` })
-        .from(affiliateClicks)
-        .where(eq(affiliateClicks.affiliateId, aff.id)),
-
-      db.select({ count: sql<number>`count(*)::int` })
-        .from(ordersTable)
-        .where(and(
-          eq(ordersTable.affiliateId, aff.id),
-          eq(ordersTable.paymentStatus, 'PAID'),
-        )),
-
-      db.select()
-        .from(balances)
-        .where(eq(balances.userId, userId))
-        .limit(1),
-
-      db.select({
-        id: ordersTable.id,
-        createdAt: ordersTable.createdAt,
-        totalAmount: ordersTable.totalAmount,
-        affiliateCommission: ordersTable.affiliateCommission,
-        balancesReleased: ordersTable.balancesReleased,
-        productTitle: productsTable.title,
-      })
-        .from(ordersTable)
-        .leftJoin(productsTable, eq(ordersTable.productId, productsTable.id))
-        .where(and(
-          eq(ordersTable.affiliateId, aff.id),
-          eq(ordersTable.paymentStatus, 'PAID'),
-        ))
-        .orderBy(sql`${ordersTable.createdAt} desc`)
-        .limit(10),
-
-      db.execute(sql`
-        SELECT
-          TO_CHAR(created_at, 'Mon YY') AS month,
-          COUNT(*)::float AS total,
-          COUNT(*)::int AS count
-        FROM affiliate_clicks
-        WHERE affiliate_id = ${aff.id}
-        AND created_at >= NOW() - INTERVAL '6 months'
-        GROUP BY DATE_TRUNC('month', created_at), TO_CHAR(created_at, 'Mon YY')
-        ORDER BY DATE_TRUNC('month', created_at)
-      `),
-
-      db.select({
-        productId: affiliateClicks.productId,
-        productTitle: productsTable.title,
-        productSlug: productsTable.slug,
-        productImage: productsTable.mainImageUrl,
-        clicks: sql<number>`count(*)::int`,
-        price: productsTable.price,
-        commRate: productsTable.affiliateCommissionRate,
-      })
-        .from(affiliateClicks)
-        .leftJoin(productsTable, eq(affiliateClicks.productId, productsTable.id))
-        .where(eq(affiliateClicks.affiliateId, aff.id))
-        .groupBy(
-          affiliateClicks.productId,
-          productsTable.title,
-          productsTable.slug,
-          productsTable.mainImageUrl,
-          productsTable.price,
-          productsTable.affiliateCommissionRate,
-        )
-        .orderBy(sql`count(*) desc`)
-        .limit(5),
-    ]);
-
-  let bal = balance[0] ?? null;
-
-  if (!bal) {
-    const [created] = await db
-      .insert(balances)
-      .values({
-        id: crypto.randomUUID(),
-        userId,
-        availableBalance: '0.00',
-        pendingBalance: '0.00',
-        paidOutTotal: '0.00',
-      })
-      .returning();
-
-    bal = created;
-  }
-
-  return {
-    status: 'active',
-    profile: aff,
-    clickCount: clickCount[0]?.count ?? 0,
-    orderCount: orderCount[0]?.count ?? 0,
-    balance: bal,
-    recentCommissions,
-    clicksOverTime: clicksOverTime as any[],
-    topProducts: topProducts ?? [],
-  } as const;
-}
 export default async function AffiliateDashboardPage() {
-
-
  const auth = await getAuthUser();
   if (!auth || !['AFFILIATE', 'BOTH', 'ADMIN'].includes(auth.role)) {
     redirect('/login');
   }
 
   const data = await getAffiliateData(auth.sub);
+
 
   // ── 1. No profile at all → onboarding
   if (!data) redirect('/affiliate/onboarding');
@@ -388,8 +260,6 @@ export default async function AffiliateDashboardPage() {
     </div>
   )}
 </div>
-
-
         <div className="aff-stats-grid">
           <div className="aff-stat-card">
             <div className="aff-stat-icon-wrap" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>

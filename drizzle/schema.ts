@@ -43,7 +43,9 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
   userId:    text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), // ← text
-});
+},(table)=>[ 
+    index('session_user_idx').on(table.userId),
+  ]);
 
 // ─── ACCOUNTS ────────────────────────────────────────
 export const accounts = pgTable('accounts', {
@@ -60,7 +62,11 @@ export const accounts = pgTable('accounts', {
   password:              text('password'),
   createdAt:             timestamp('created_at').notNull().defaultNow(),
   updatedAt:             timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+    index('account_user_idx').on(table.userId),
+    index('account_provider_idx').on(table.providerId,table.accountId)
+  ]
+);
 
 // ─── VERIFICATIONS ───────────────────────────────────
 export const verifications = pgTable('verifications', {
@@ -91,7 +97,11 @@ export const vendorProfiles = pgTable('vendor_profiles', {
   avgRating:      decimal('avg_rating', { precision: 3, scale: 2 }),
   createdAt:      timestamp('created_at').notNull().defaultNow(),
   updatedAt:      timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},
+  (table) =>[ 
+    index('vendor_user_idx').on(table.userId),
+    index('vendor_status_idx').on(table.status)
+  ]);
 
 // ─── AFFILIATE PROFILES ──────────────────────────────
 export const affiliateProfiles = pgTable('affiliate_profiles', {
@@ -112,7 +122,11 @@ export const affiliateProfiles = pgTable('affiliate_profiles', {
   status:            affiliateStatusEnum('status').notNull().default('pending'),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+    index('affiliate_user_idx').on(table.userId),
+    index('affiliate_status_idx').on(table.status)
+  ]
+);
 
 // ─── CATEGORIES ──────────────────────────────────────
 export const categories = pgTable('categories', {
@@ -122,7 +136,10 @@ export const categories = pgTable('categories', {
   icon:      text('icon'),
   parentId:  uuid('parent_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+},(table)=>[
+    index('categories_parent_idx').on(table.parentId),
+]
+);
 
 // ─── PRODUCTS ────────────────────────────────────────
 export const products = pgTable('products', {
@@ -145,7 +162,16 @@ export const products = pgTable('products', {
   adminNote:               text('admin_note'),
   createdAt:               timestamp('created_at').notNull().defaultNow(),
   updatedAt:               timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+}, (table)=>[
+    index('product_vendor_idx').on(table.vendorId),
+    index('products_category_idx').on(table.categoryId),
+    index('product_status_idx').on(table.status),
+    //vendor
+    index('product_vendor_status_idx').on(table.vendorId, table.status),
+    //marketpalce listing
+    index('product_category_status_idx').on(table.categoryId,table.status),
+  ]
+);
 
 // ─── ORDERS ──────────────────────────────────────────
 export const orders = pgTable('orders', {
@@ -177,7 +203,24 @@ export const orders = pgTable('orders', {
   balancesReleased:    boolean('balances_released').notNull().default(false),
   createdAt:           timestamp('created_at').notNull().defaultNow(),
   updatedAt:           timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+  index('orders_vendor_idx').on(table.vendorId),
+  index('orders_affiliate_idx').on(table.affiliateId),
+  index('orders_product_idx').on(table.productId),
+  // vendor dashboard
+  index('orders_vendor_created_idx')
+    .on(table.vendorId, table.createdAt),
+  // affiliate dashboard
+  index('orders_affiliate_created_idx')
+    .on(table.affiliateId, table.createdAt),
+  // order tracking
+  index('orders_status_idx')
+    .on(table.orderStatus),
+  // payment processing
+  index('orders_payment_idx')
+    .on(table.paymentStatus),
+  ]
+);
 
 // ─── MPESA TRANSACTIONS ──────────────────────────────
 export const mpesaTransactions = pgTable('mpesa_transactions', {
@@ -195,7 +238,11 @@ export const mpesaTransactions = pgTable('mpesa_transactions', {
   checkoutMetadata:   json('checkout_metadata'),
   createdAt:          timestamp('created_at').notNull().defaultNow(),
   updatedAt:          timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+  index('mpesa_order_idx').on(table.orderId),
+  index('mpesa_checkout_idx').on(table.checkoutRequestId),
+  ]
+);
 
 // ─── AFFILIATE CLICKS ────────────────────────────────
 export const affiliateClicks = pgTable('affiliate_clicks', {
@@ -207,9 +254,9 @@ export const affiliateClicks = pgTable('affiliate_clicks', {
   referrer:    text('referrer'),
   cookieToken: text('cookie_token'),
   createdAt:   timestamp('created_at').notNull().defaultNow(),
-}, (t) => [
-  index('affiliate_clicks_affiliate_idx').on(t.affiliateId),
-  index('affiliate_clicks_cookie_idx').on(t.cookieToken),
+}, (table) => [
+  index('affiliate_clicks_affiliate_idx').on(table.affiliateId),
+  index('affiliate_clicks_cookie_idx').on(table.cookieToken),
 ]);
 
 // ─── REVIEWS ─────────────────────────────────────────
@@ -221,7 +268,11 @@ export const reviews = pgTable('reviews', {
   rating:     integer('rating').notNull(),
   reviewText: text('review_text'),
   createdAt:  timestamp('created_at').notNull().defaultNow(),
-});
+},(table)=>[
+  index('reviews_product_idx').on(table.productId),
+  index('reviews_vendor_idx').on(table.vendorId),
+]
+);
 
 // ─── BALANCES ────────────────────────────────────────
 export const balances = pgTable('balances', {
@@ -244,7 +295,10 @@ export const payoutRequests = pgTable('payout_requests', {
   adminNote: text('admin_note'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+    index('payout_user_idx').on(table.userId),
+    index('payout_status_idx').on(table.status),
+  ]);
 
 // ─── PLATFORM SETTINGS ───────────────────────────────
 export const platformSettings = pgTable('platform_settings', {
@@ -262,7 +316,11 @@ export const disputeTickets = pgTable('dispute_tickets', {
   status:     disputeStatusEnum('status').notNull().default('open'),
   createdAt:  timestamp('created_at').notNull().defaultNow(),
   updatedAt:  timestamp('updated_at').notNull().$onUpdate(() => new Date()),
-});
+},(table)=>[
+    index('dispute_order_idx').on(table.orderId),
+    index('dispute_opened_idx').on(table.openedById),
+  ]
+);
 
 // ─── RELATIONS ───────────────────────────────────────
 export const usersRelations = relations(users, ({ one, many }) => ({

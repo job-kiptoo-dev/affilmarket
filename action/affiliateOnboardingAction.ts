@@ -97,11 +97,6 @@ export async function submitAffiliateOnboarding(formData: unknown) {
       isOnboarded:      true,
     });
   }
-
-
-
-
-
   // ── 1. Create affiliate profile ──
 //   await db.insert(affiliateProfiles).values({
 //     id:               crypto.randomUUID(),
