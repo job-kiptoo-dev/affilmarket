@@ -687,20 +687,20 @@ export function NewProductForm({ categories }: Props) {
               </select>
             </Field>
 
-            <Field label="Subcategory" hint={subCategories.length === 0 ? 'Select a category first' : undefined}>
-              <select
-                className="np-input"
-                style={selectStyle()}
-                value={form.subcategoryId}
-                onChange={(e) => set('subcategoryId', e.target.value)}
-                disabled={subCategories.length === 0}
-              >
-                <option value="">Select subcategory…</option>
-                {subCategories.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </Field>
+            {/* <Field label="Subcategory" hint={subCategories.length === 0 ? 'Select a category first' : undefined}> */}
+            {/*   <select */}
+            {/*     className="np-input" */}
+            {/*     style={selectStyle()} */}
+            {/*     value={form.subcategoryId} */}
+            {/*     onChange={(e) => set('subcategoryId', e.target.value)} */}
+            {/*     disabled={subCategories.length === 0} */}
+            {/*   > */}
+            {/*     <option value="">Select subcategory…</option> */}
+            {/*     {subCategories.map((s) => ( */}
+            {/*       <option key={s.id} value={s.id}>{s.name}</option> */}
+            {/*     ))} */}
+            {/*   </select> */}
+            {/* </Field> */}
           </div>
 
           <div className="np-grid-2">

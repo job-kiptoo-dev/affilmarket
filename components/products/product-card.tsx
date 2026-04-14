@@ -56,6 +56,7 @@ export function ProductCard({ product, showAffiliateLink, affiliateToken }: Prod
             <Image
               src={product.mainImageUrl}
               alt={product.title}
+              sizes="5"
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-300"
               onError={() => setImgBroken(true)}  // ✅ fallback on broken URL

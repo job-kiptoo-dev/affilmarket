@@ -1,10 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { DashboardShell }          from '@/components/dashboard/dashboard-shell';
 import { formatKES }               from '@/lib/utils';
-// import { requestPayoutAction }     from './actions';
-// import type { PayoutsPageData, PayoutMethod, PayoutStatus } from './actions';
 import {
   Wallet, Clock, CheckCircle, XCircle,
   ArrowUpRight, AlertCircle, Smartphone, Building2,

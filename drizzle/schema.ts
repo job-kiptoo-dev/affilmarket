@@ -93,7 +93,7 @@ export const vendorProfiles = pgTable('vendor_profiles', {
   suspendedAt:    timestamp('suspended_at'),
   suspendedReason: text('suspended_reason'),
   status:         vendorStatusEnum('status').notNull().default('pending'),
-  isonboarded:    boolean('is_onboarded').default(false).notNull(),
+  isOnboarded:    boolean('is_onboarded').default(false).notNull(),
   avgRating:      decimal('avg_rating', { precision: 3, scale: 2 }),
   createdAt:      timestamp('created_at').notNull().defaultNow(),
   updatedAt:      timestamp('updated_at').notNull().$onUpdate(() => new Date()),

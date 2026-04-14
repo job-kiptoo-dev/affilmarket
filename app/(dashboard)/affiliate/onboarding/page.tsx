@@ -6,10 +6,6 @@ import { eq }                from 'drizzle-orm';
 import { AffiliateOnboardingForm } from '@/components/affiliate/affiliate-onboarding-form';
 
 
-
-
-
-
 export default async function AffiliateOnboardingPage() {
   const auth = await getAuthUser();
 
@@ -20,6 +16,7 @@ export default async function AffiliateOnboardingPage() {
     .select({
       id:          affiliateProfiles.id,
       isOnboarded: affiliateProfiles.isOnboarded,
+
     })
     .from(affiliateProfiles)
     .where(eq(affiliateProfiles.userId, auth.sub))

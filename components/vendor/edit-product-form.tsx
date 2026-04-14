@@ -313,6 +313,8 @@ export function EditProductForm({ product, categories }: Props) {
                   <input style={{ ...inputStyle(), flex: 1 }} type="url" placeholder="https://..." value={newGallery}
                     onChange={(e) => setNewGallery(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGallery(); } }} />
+
+
                   <button type="button" onClick={addGallery} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#16a34a', cursor: 'pointer' }}>
                     <Plus size={13} /> Add
                   </button>
