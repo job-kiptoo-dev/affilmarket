@@ -13,7 +13,7 @@ export const RegisterSchema = z.object({
     .regex(/[0-9]/, 'Password must contain at least one number'),
   phone: z.string().regex(/^(\+254|0)[17]\d{8}$/, 'Enter a valid Kenyan phone number'),
   role: z.enum(['VENDOR', 'AFFILIATE', 'BOTH']),
-  fullName: z.string().min(2, 'Name must be at least 2 characters').optional(),
+  fullName: z.string().min(2, 'Name must be at least 2 characters'),
 });
 
 export const LoginSchema = z.object({

@@ -65,7 +65,7 @@ export default function RegisterPage() {
     setServerError('');
     const result = await registerUser(data);
 
-    if (result.error) {
+    if (!result.success) {
       setServerError(result.error);
       return;
     }

@@ -1,70 +1,50 @@
 "use server";
 
 import { affiliateProfiles, vendorProfiles } from "@/drizzle/schema";
-import { RegisterSchema } from "@/lib/schemas";
-import { generateAffiliateToken } from "@/lib/utils";
-import { auth } from "@/lib/utils/auth";
-import { db } from "@/lib/utils/db";
-import { revalidatePath } from "next/cache";
+import { RegisterSchema }                    from "@/lib/schemas";
+import { generateAffiliateToken }            from "@/lib/utils";
+import { auth }                              from "@/lib/utils/auth";
+import { db }                                from "@/lib/utils/db";
+import { revalidatePath }                    from "next/cache";
 
-export async function registerUser(formData: unknown) {
-  // 1. Validation
+type ActionResult =
+  | { success: true;  message: string; role: string }
+  | { success: false; error: string };
+
+export async function registerUser(formData: unknown): Promise<ActionResult> {
+  // 1. Validate input
   const parsed = RegisterSchema.safeParse(formData);
   if (!parsed.success) {
-    return { 
-      success: false, 
-      error: "Invalid form data. Please check your inputs." 
-    };
+    return { success: false, error: "Invalid form data. Please check your inputs." };
   }
 
   const { fullName, email, phone, password, role } = parsed.data;
 
   try {
-    // 2. Better Auth Registration
-    // Better Auth handles the email sending & password hashing internally
+    // 2. Create account via Better Auth
     const result = await auth.api.signUpEmail({
-      body: {
-        name: fullName,
-        email,
-        password,
-        role, // Ensure this exists in your auth config 'additionalFields'
-        phone, // Ensure this exists in your auth config 'additionalFields'
-      },
-    }).catch((e) => {
-      // Catching internal Better Auth errors that might not throw
-      return { error: e };
+      body: { name: fullName, email, password, role, phone },
     });
 
-    // Handle Better Auth specific errors (like user already exists)
-    if ("error" in result && result.error) {
-       const errorMsg = result.error.message?.toLowerCase() || "";
-       if (errorMsg.includes("already exists")) {
-         return { success: false, error: "This email is already registered. Try logging in." };
-       }
-       return { success: false, error: result.error.message || "Failed to create account." };
-    }
-
-    // result.user is guaranteed to exist if we get here
     const userId = result.user.id;
 
-    // 3. Parallel Side-Effects
-    // We use Promise.all to run these concurrently for better performance
-    const sideEffects = [];
+    // 3. Create role-specific profiles in parallel
+    const sideEffects: Promise<unknown>[] = [];
 
-    if (role === 'VENDOR' || role === 'BOTH') {
+    if (role === "VENDOR" || role === "BOTH") {
       sideEffects.push(
         db.insert(vendorProfiles).values({
-          id: crypto.randomUUID(),
+          id:       crypto.randomUUID(),
           userId,
           shopName: `${fullName}'s Shop`,
         }).onConflictDoNothing()
       );
     }
 
-    if (role === 'AFFILIATE' || role === 'BOTH') {
+    if (role === "AFFILIATE" || role === "BOTH") {
       sideEffects.push(
         db.insert(affiliateProfiles).values({
-          id: crypto.randomUUID(),
+          id:             crypto.randomUUID(),
           userId,
           fullName,
           affiliateToken: generateAffiliateToken(),
@@ -73,23 +53,27 @@ export async function registerUser(formData: unknown) {
     }
 
     await Promise.all(sideEffects);
-
     revalidatePath("/admin/users");
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: "Check your inbox! We've sent a verification link to activate your account.",
-      role 
+      role,
     };
 
-  } catch (error: any) {
-    console.error("CRITICAL_REGISTRATION_FAILURE:", error);
-    return { 
-      success: false, 
-      error: "Our systems are having trouble. Please try again in a few minutes." 
-    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+
+    console.error("REGISTRATION_FAILURE:", error);
+
+    if (message.includes("already exists")) {
+      return { success: false, error: "This email is already registered. Try signing in instead." };
+    }
+
+    return { success: false, error: "Something went wrong. Please try again in a few minutes." };
   }
 }
+
 // 'use server';
 //
 // import { db } from '@/lib/utils/db';
