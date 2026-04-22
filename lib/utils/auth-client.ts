@@ -18,7 +18,10 @@ import { nextCookies } from 'better-auth/next-js';
 
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_APP_URL!,
+    emailAndPassword: {
+      enabled: true,
+    },
   plugins: [nextCookies()],
 });
 
-export const { signIn, signUp, signOut, useSession, getSession } = authClient;
+export const { signIn, signUp, signOut, useSession, getSession,resetPassword,requestPasswordReset } = authClient;
