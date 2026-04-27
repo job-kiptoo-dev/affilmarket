@@ -1,24 +1,23 @@
 'use client';
 
-import { useState }              from 'react';
-import Link                      from 'next/link';
-import { useRouter }             from 'next/navigation';
-import { useForm, Controller }   from 'react-hook-form';
-import { zodResolver }           from '@hookform/resolvers/zod';
-import { z }                     from 'zod';
-import { LoginSchema }           from '@/lib/schemas';
+import { useState }            from 'react';
+import Link                    from 'next/link';
+import { useRouter }           from 'next/navigation';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver }         from '@hookform/resolvers/zod';
+import { z }                   from 'zod';
+import { LoginSchema }         from '@/lib/schemas';
 import { Eye, EyeOff, ShoppingBag, Loader2, AlertCircle, MailWarning } from 'lucide-react';
-import { signIn }                from '@/lib/utils/auth-client';
-import { useAuthStore }          from '@/store/auth';
+import { signIn, authClient }  from '@/lib/utils/auth-client';
+import { useAuthStore }        from '@/store/auth';
 import { Field, FieldLabel, FieldError } from '@/components/ui/field';
-import { Input }                 from '@/components/ui/input';
-import { Button }                from '@/components/ui/button';
+import { Input }               from '@/components/ui/input';
 
 type LoginForm = z.infer<typeof LoginSchema>;
 
 type ServerError =
-  | { type: 'unverified' }
-  | { type: 'generic'; message: string }
+  | { type: 'unverified'; email: string }
+  | { type: 'generic';    message: string }
   | null;
 
 export default function LoginPage() {
@@ -27,8 +26,14 @@ export default function LoginPage() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [serverError,  setServerError]  = useState<ServerError>(null);
+  const [resendState,  setResendState]  = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
-  const form = useForm<LoginForm>({
+  const {
+    control,
+    handleSubmit,
+    setError,
+    formState: { isSubmitting },
+  } = useForm<LoginForm>({
     resolver:       zodResolver(LoginSchema),
     mode:           'onTouched',
     reValidateMode: 'onChange',
@@ -36,16 +41,32 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     setServerError(null);
+    setResendState('idle');
 
     const result = await signIn.email(
       { email: data.email, password: data.password },
       {
         onError: (ctx) => {
-          if (ctx.error.status === 403) {
-            setServerError({ type: 'unverified' });
-          } else {
-            setServerError({ type: 'generic', message: ctx.error.message });
+          const status  = ctx.error.status;
+          const message = (ctx.error.message ?? '').toLowerCase();
+
+          if (status === 403 || message.includes('email not verified')) {
+            setServerError({ type: 'unverified', email: data.email });
+            return;
           }
+
+          if (status === 401 || message.includes('invalid') || message.includes('credentials')) {
+            setError('email',    { type: 'server', message: 'Incorrect email or password.' });
+            setError('password', { type: 'server', message: ' ' }); // keeps field red without repeating text
+            return;
+          }
+
+          if (status === 429) {
+            setServerError({ type: 'generic', message: 'Too many attempts. Please wait a few minutes and try again.' });
+            return;
+          }
+
+          setServerError({ type: 'generic', message: ctx.error.message ?? 'Something went wrong. Please try again.' });
         },
       },
     );
@@ -53,18 +74,27 @@ export default function LoginPage() {
     if (result?.error) return;
 
     const user = await fetchUser();
-
     if      (user?.role === 'ADMIN')     router.push('/admin');
     else if (user?.role === 'AFFILIATE') router.push('/affiliate');
     else                                 router.push('/vendor');
   };
 
-  const { formState: { isSubmitting } } = form;
+  const handleResend = async () => {
+    if (serverError?.type !== 'unverified') return;
+    setResendState('sending');
+    try {
+      await authClient.sendVerificationEmail({ email: serverError.email });
+      setResendState('sent');
+    } catch {
+      setResendState('error');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-950 to-green-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
 
+        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -88,11 +118,22 @@ export default function LoginPage() {
           {serverError?.type === 'unverified' && (
             <div className="mb-5 flex gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <MailWarning className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-semibold text-amber-800">Email not verified</p>
                 <p className="text-xs text-amber-700 mt-0.5">
                   Check your inbox and click the verification link before signing in.
                 </p>
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendState === 'sending' || resendState === 'sent'}
+                  className="mt-2 text-xs font-medium text-amber-800 underline hover:text-amber-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resendState === 'sending' && 'Sending...'}
+                  {resendState === 'sent'    && '✓ Verification email sent'}
+                  {resendState === 'error'   && 'Failed to resend — try again'}
+                  {resendState === 'idle'    && 'Resend verification email'}
+                </button>
               </div>
             </div>
           )}
@@ -108,11 +149,11 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
 
             {/* Email */}
             <Controller
-              control={form.control}
+              control={control}
               name="email"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
@@ -126,14 +167,14 @@ export default function LoginPage() {
                     disabled={isSubmitting}
                     aria-invalid={fieldState.invalid}
                   />
-                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  {fieldState.error && <FieldError errors={[fieldState.error]} />}
                 </Field>
               )}
             />
 
             {/* Password */}
             <Controller
-              control={form.control}
+              control={control}
               name="password"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
@@ -159,14 +200,14 @@ export default function LoginPage() {
                       tabIndex={-1}
                       onClick={() => setShowPassword(p => !p)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-
-
-
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  {/* Only show password error if it has real text (not the placeholder ' ') */}
+                  {fieldState.error?.message?.trim() && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
                 </Field>
               )}
             />
@@ -174,8 +215,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-             className="w-full bg-brand-green text-white py-3 rounded-xl font-semibold hover:bg-brand-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-
+              className="w-full bg-brand-green text-white py-3 rounded-xl font-semibold hover:bg-brand-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSubmitting ? 'Signing in...' : 'Sign in'}

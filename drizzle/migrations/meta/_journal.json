@@ -57,6 +57,20 @@
       "when": 1775867111280,
       "tag": "0007_tiresome_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777287461833,
+      "tag": "0008_gray_luckman",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777287678147,
+      "tag": "0009_clammy_miss_america",
+      "breakpoints": true
     }
   ]
 }

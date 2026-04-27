@@ -144,7 +144,10 @@ export const categories = pgTable('categories', {
 // ─── PRODUCTS ────────────────────────────────────────
 export const products = pgTable('products', {
   id:                      uuid('id').primaryKey(),
-  vendorId:                uuid('vendor_id').notNull().references(() => vendorProfiles.id),
+ // vendorId:                uuid('vendor_id').notNull().references(() => vendorProfiles.id),
+  vendorId: uuid('vendor_id')
+    .notNull()
+    .references(() => vendorProfiles.id, { onDelete: 'cascade' }),
   title:                   text('title').notNull(),
   slug:                    text('slug').notNull().unique(),
   shortDescription:        text('short_description'),
@@ -247,8 +250,17 @@ export const mpesaTransactions = pgTable('mpesa_transactions', {
 // ─── AFFILIATE CLICKS ────────────────────────────────
 export const affiliateClicks = pgTable('affiliate_clicks', {
   id:          uuid('id').primaryKey(),
-  affiliateId: uuid('affiliate_id').notNull().references(() => affiliateProfiles.id),
-  productId:   uuid('product_id').notNull().references(() => products.id),
+
+    affiliateId: uuid('affiliate_id')
+    .notNull()
+    .references(() => affiliateProfiles.id, { onDelete: 'cascade' }),
+
+  productId: uuid('product_id')
+    .notNull()
+    .references(() => products.id, { onDelete: 'cascade' }),
+
+  // affiliateId: uuid('affiliate_id').notNull().references(() => affiliateProfiles.id),
+  // productId:   uuid('product_id').notNull().references(() => products.id),
   ipAddress:   text('ip_address'),
   userAgent:   text('user_agent'),
   referrer:    text('referrer'),
