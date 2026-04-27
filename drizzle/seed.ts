@@ -1,107 +1,160 @@
 import 'dotenv/config';
+import {
+  users, accounts, vendorProfiles, affiliateProfiles,
+  balances, categories as categoriesTable, platformSettings,
+} from '@/drizzle/schema';
+import { eq } from 'drizzle-orm';
 import { db } from '@/lib/utils/db';
 import { auth } from '@/lib/utils/auth';
-import { users, balances, affiliateProfiles } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
 
-async function seedAdmin() {
-  console.log('🚀 Running DIAGNOSTIC Seed...');
+async function seed() {
+  console.log('🌱 Starting AffilMarket Kenya Master Seed...');
 
-  const adminEmail = 'admin@affilmarket.co.ke';
-  const plainPassword = 'Admin@AffilMarket2026!';
+  // ── 1. Platform Settings ──────────────────────────────────────
+  const settings = [
+    { key: 'platform_fee_rate',              value: '0.05' },
+    { key: 'platform_fixed_fee',             value: '10'   },
+    { key: 'min_payout_threshold_vendor',    value: '500'  },
+    { key: 'min_payout_threshold_affiliate', value: '200'  },
+    { key: 'affiliate_cookie_days',          value: '30'   },
+    { key: 'balance_release_days',           value: '7'    },
+  ];
 
+  for (const s of settings) {
+    const existing = await db.select().from(platformSettings).where(eq(platformSettings.key, s.key)).limit(1);
+    if (!existing.length) await db.insert(platformSettings).values(s);
+  }
+  console.log('✅ Platform settings seeded');
 
-  // SAFETY CHECK: If this is > 32, we know why it's failing
-  console.log(`Diagnostic: Password length is ${plainPassword.length} characters.`);
+  // ── 2. Categories ─────────────────────────────────────────────
+  const cats = [
+    { name: 'Electronics',      slug: 'electronics',    icon: '📱' },
+    { name: 'Fashion',          slug: 'fashion',        icon: '👗' },
+    { name: 'Health & Beauty',  slug: 'health-beauty',  icon: '💄' },
+    { name: 'Food & Groceries', slug: 'food-groceries', icon: '🛒' },
+    { name: 'Services',         slug: 'services',       icon: '🔧' },
+  ];
 
-  try {
-    console.log('🧹 Cleaning up old records...');
-    await db.delete(users).where(eq(users.email, adminEmail));
+  for (const cat of cats) {
+    const existing = await db.select().from(categoriesTable).where(eq(categoriesTable.slug, cat.slug)).limit(1);
+    if (!existing.length) await db.insert(categoriesTable).values({ id: crypto.randomUUID(), ...cat });
+  }
+  console.log('✅ Categories seeded');
 
-    console.log('Registering via Better Auth API...');
-    const response = await auth.api.signUpEmail({
-      body: {
-        email: adminEmail,
-        password: plainPassword, // THIS MUST BE THE PLAIN STRING
-        name: 'AffilMarket Admin',
-        role: 'ADMIN',
-      },
-    });
+  // ── 3. Helper: The "Better Auth" Safe Upsert ──────────────────
+  async function upsertUser({
+    email, password, name, role
+  }: {
+    email: string; password: string; name: string; role: 'ADMIN' | 'VENDOR' | 'AFFILIATE';
+  }) {
+    if (!email) throw new Error("Email is undefined in upsertUser");
 
-    if (response) {
-      console.log('Updating role to ADMIN...');
-      await db.update(users)
-        .set({ role: 'ADMIN', status: 'active', emailVerified: true })
-        .where(eq(users.id, response.user.id));
-
-      console.log('✅ Success! Try logging in now.');
+    const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    
+    if (existing.length) {
+      console.log(`⏭️  User already exists: ${email}`);
+      return existing[0].id;
     }
-  } catch (error: any) {
-    // This will help us see if the error is coming from validation
-    console.error('❌ Better Auth rejected the request:');
-    console.error(JSON.stringify(error.body || error.message, null, 2));
-  }
-}
 
-seedAdmin().then(() => process.exit(0));
+    console.log(`👤 Creating ${role}: ${email}...`);
 
-
-async function seedAffiliate(email: string, name: string, phone: string, token: string) {
-    const affiliateEmail = 'Affiliate@affilmarket.co.ke';
-    const plainPassword = 'Affiliate@AffilMarket2026!';
-    const name1 = 'Affiliate User';
-
-
-  console.log(`🌱 Seeding Affiliate: ${name1}...`);
-
-
-
-  // 1. Create or Get User via Better Auth
-  let userId: string;
-  const existingUser = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-
-  if (existingUser.length > 0) {
-    userId = existingUser[0].id;
-    console.log(`⏭️  User exists, skipping creation.`);
-  } else {
-    const res = await auth.api.signUpEmail({
+    // We use Better Auth API to ensure the password hash is perfect
+    const result = await auth.api.signUpEmail({
       body: { 
-        email: affiliateEmail, 
-        password: plainPassword,
-        name : name1,
-        role: 'AFFILIATE' 
+        name, 
+        email, 
+        password,
+        role // Passing role here to satisfy "role is required"
       },
     });
-    userId = res.user.id;
-    // Set status/verified
-    await db.update(users).set({ status: 'active', emailVerified: true }).where(eq(users.id, userId));
+
+    if (!result?.user) throw new Error(`Failed to create user: ${email}`);
+
+    // Force verify and set status to active
+    await db.update(users)
+      .set({ 
+        status: 'active', 
+        emailVerified: true,
+        role: role // Double-ensure role is set
+      })
+      .where(eq(users.id, result.user.id));
+
+    return result.user.id;
   }
 
-  // 2. Create Affiliate Profile
-  const existingProfile = await db.select().from(affiliateProfiles).where(eq(affiliateProfiles.userId, userId)).limit(1);
-  if (!existingProfile.length) {
+  // ── 4. Admin ──────────────────────────────────────────────────
+  const adminId = await upsertUser({
+    email: 'admin@affilmarket.co.ke',
+    password: 'Admin@AffilMarket2026!',
+    name: 'AffilMarket Admin',
+    role: 'ADMIN',
+  });
+
+  const adminBal = await db.select().from(balances).where(eq(balances.userId, adminId)).limit(1);
+  if (!adminBal.length) await db.insert(balances).values({ id: crypto.randomUUID(), userId: adminId });
+  console.log('✅ Admin Ready');
+
+  // ── 5. Demo Vendor ────────────────────────────────────────────
+  const vendorId = await upsertUser({
+    email: 'vendor@demo.co.ke',
+    password: 'Vendor@Demo123!',
+    name: 'TechHub Kenya',
+    role: 'VENDOR',
+  });
+
+  const vendorExists = await db.select().from(vendorProfiles).where(eq(vendorProfiles.userId, vendorId)).limit(1);
+  if (!vendorExists.length) {
+    await db.insert(vendorProfiles).values({
+      id: crypto.randomUUID(),
+      userId: vendorId,
+      shopName: 'TechHub Kenya',
+      legalName: 'TechHub Kenya Ltd',
+      phone: '+254711111111',
+      status: 'approved',
+    });
+    await db.insert(balances).values({
+      id: crypto.randomUUID(),
+      userId: vendorId,
+      pendingBalance: '12500',
+      availableBalance: '8000',
+    });
+  }
+  console.log('✅ Vendor Ready');
+
+  // ── 6. Demo Affiliate ─────────────────────────────────────────
+  const affiliateId = await upsertUser({
+    email: 'affiliate@demo.co.ke',
+    password: 'Affiliate@Demo123!',
+    name: 'Jane Muthoni',
+    role: 'AFFILIATE',
+  });
+
+  const affExists = await db.select().from(affiliateProfiles).where(eq(affiliateProfiles.userId, affiliateId)).limit(1);
+  if (!affExists.length) {
     await db.insert(affiliateProfiles).values({
       id: crypto.randomUUID(),
-      userId,
-      fullName: name,
-      phone,
-      affiliateToken: token,
-      mpesaPhone: phone,
+      userId: affiliateId,
+      fullName: 'Jane Muthoni',
+      phone: '+254722222222',
+      affiliateToken: 'JANE_2026',
+      mpesaPhone: '+254722222222',
       status: 'active',
     });
-    console.log(`✅ Profile created for ${name}`);
+    await db.insert(balances).values({
+      id: crypto.randomUUID(),
+      userId: affiliateId,
+      pendingBalance: '3200',
+      availableBalance: '1500',
+    });
   }
+  console.log('✅ Affiliate Ready');
 
-  // 3. Initialize Balance
-  const existingBal = await db.select().from(balances).where(eq(balances.userId, userId)).limit(1);
-  if (!existingBal.length) {
-    await db.insert(balances).values({ id: crypto.randomUUID(), userId, pendingBalance: '0', availableBalance: '0' });
-    console.log(`✅ Balance initialized.`);
-  }
+  console.log('\n🎉 Master Seeding Complete!');
 }
 
-// Usage Example:
-// await seedAffiliate('affiliate@demo.co.ke', 'Jane Muthoni', '+254722222222', 'DEMO_JANE_2026');
-
-seedAffiliate().then(() => process.exit(0));
-
+seed()
+  .catch((e) => {
+    console.error('❌ Seed failed:', e.message);
+    process.exit(1);
+  })
+  .finally(() => process.exit(0));
