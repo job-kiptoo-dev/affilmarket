@@ -115,16 +115,27 @@ const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   setValue('kraPinDoc', result.url!); // ✅ real Supabase URL instead of just filename
 };
-  const nextStep = async () => {
-    const fieldMap: Record<number, (keyof FormData)[]> = {
-      1: ['shopName', 'phone', 'description', 'logoUrl'],
-      2: ['legalName', 'kraPin'],
-      3: ['city', 'address'],
-    };
-    const valid = await trigger(fieldMap[step]);
-    if (valid) setStep(s => s + 1);
+const nextStep = async () => {
+  const fieldMap: Record<number, (keyof FormData)[]> = {
+    1: ['shopName', 'phone', 'description', 'logoUrl'],
+    2: ['legalName', 'kraPin'],
+    3: ['city', 'address'],
   };
-
+  
+  // 1. Get the fields for the current step
+  const fieldsToValidate = fieldMap[step];
+  
+  // 2. Trigger validation and capture the boolean result
+  const isValid = await trigger(fieldsToValidate);
+  
+  // 3. ONLY proceed if validation passed
+  if (isValid) {
+    setStep((s) => s + 1);
+  } else {
+    // Optional: Log or alert that validation failed
+    console.log("Validation failed for step", step);
+  }
+};
   const onSubmit = async (data: FormData) => {
     setServerError('');
     setIsSubmitting(true);
