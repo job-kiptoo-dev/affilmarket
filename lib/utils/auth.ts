@@ -33,31 +33,31 @@ export const auth = betterAuth({
   },
 
   // ✅ TOP-LEVEL — this is what was missing
-  emailVerification: {
-    sendOnSignUp:                true,
-    autoSignInAfterVerification: false,
-    sendVerificationEmail: async ({ user, url }) => {
-      console.log("📧 Sending verification email to:", user.email);
-      console.log("🔗 Verification URL:", url);
-
-      const { data, error } = await resend.emails.send({
-        from:    "Acme <onboarding@resend.dev>",
-        to:      user.email,
-        subject: "Verify your email address",
-        text:    `Click the link to verify your email: ${url}`,
-      });
-
-      if (error) console.error("❌ Resend error:", error);
-      else       console.log("✅ Verification email sent:", data?.id);
-    },
-  },
-
+  // emailVerification: {
+  //   sendOnSignUp:                true,
+  //   autoSignInAfterVerification: false,
+  //   sendVerificationEmail: async ({ user, url }) => {
+  //     console.log("📧 Sending verification email to:", user.email);
+  //     console.log("🔗 Verification URL:", url);
+  //
+  //     const { data, error } = await resend.emails.send({
+  //       from:    "Acme <onboarding@resend.dev>",
+  //       to:      user.email,
+  //       subject: "Verify your email address",
+  //       text:    `Click the link to verify your email: ${url}`,
+  //     });
+  //
+  //     if (error) console.error("❌ Resend error:", error);
+  //     else       console.log("✅ Verification email sent:", data?.id);
+  //   },
+  // },
+  //
   emailAndPassword: {
     enabled:                  true,
     autoSignIn:               false,
     minPasswordLength:        8,
     maxPasswordLength:        150,
-    requireEmailVerification: true,
+    // requireEmailVerification: true,
     onExistingUserSignUp: async ({ user }) => {
       await resend.emails.send({
         from:    "Acme <onboarding@resend.dev>",
