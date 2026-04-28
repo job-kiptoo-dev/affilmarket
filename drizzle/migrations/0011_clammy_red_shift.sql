@@ -1,0 +1,1 @@
+ALTER TABLE "vendor_profiles" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();

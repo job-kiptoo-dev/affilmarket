@@ -1,53 +1,68 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { toast } from 'sonner';
 import { submitAffiliateOnboarding } from '@/action/affiliateOnboardingAction';
 import {
-  Link2, Phone, CreditCard, Rocket,
-  Loader2, ChevronRight, ChevronLeft,
-  Smartphone, Building2, User, Hash,
-  CheckCircle,
+  CreditCard, Rocket, Loader2, ChevronRight, ChevronLeft,
+  User, Hash, Check, ShieldCheck, Smartphone, Banknote
 } from 'lucide-react';
 
-// 1. IMPROVED SCHEMA with Conditional Validation
-const schema = z.object({
-  // Step 1
-  fullName: z.string().min(2, 'Full name is required').max(100),
-  phone: z.string().min(9, 'Phone number is required').max(20),
-  
-  // Step 2
-  idNumber: z.string().max(20).optional().or(z.literal('')),
-  
-  // Step 3
+// ─── Full schema (used only for final submit) ─────────────────────────────────
+const baseSchema = z.object({
+  fullName: z.string().min(2, 'Full name is required'),
+  phone: z.string().min(9, 'Phone number is required'),
+  idNumber: z.string().min(5, 'ID number is required'),
   payoutMethod: z.enum(['MPESA', 'BANK']),
-  mpesaPhone: z.string().optional().or(z.literal('')),
-  bankName: z.string().optional().or(z.literal('')),
-  bankAccountName: z.string().optional().or(z.literal('')),
-  bankAccountNumber: z.string().optional().or(z.literal('')),
-}).refine((data) => {
-  // If BANK is selected, these fields become mandatory
-  if (data.payoutMethod === 'BANK') {
-    return !!data.bankName && !!data.bankAccountName && !!data.bankAccountNumber;
+  mpesaPhone: z.string().optional(),
+  bankName: z.string().optional(),
+  bankAccountName: z.string().optional(),
+  bankAccountNumber: z.string().optional(),
+});
+const schema = baseSchema.superRefine((data, ctx) => {
+  if (data.payoutMethod === 'MPESA') {
+    if (!data.mpesaPhone || data.mpesaPhone.length < 9) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'M-Pesa number is required', path: ['mpesaPhone'] });
+    }
+  } else {
+    if (!data.bankName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Bank name required', path: ['bankName'] });
+    if (!data.bankAccountName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Account name required', path: ['bankAccountName'] });
+    if (!data.bankAccountNumber) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Account number required', path: ['bankAccountNumber'] });
   }
-  return true;
-}, {
-  message: "All bank details are required for bank transfers",
-  path: ["bankName"], 
 });
 
-type FormData = z.infer<typeof schema>;
+// ─── Per-step schemas (used only for step navigation) ────────────────────────
+const stepSchemas = {
+  1: z.object({
+    fullName: z.string().min(2, 'Full name is required'),
+    phone: z.string().min(9, 'Phone number is required'),
+  }),
+  2: z.object({
+    idNumber: z.string().min(5, 'ID number is required'),
+  }),
+  3: {
+    MPESA: z.object({
+      mpesaPhone: z.string().min(9, 'M-Pesa number is required'),
+    }),
+    BANK: z.object({
+      bankName: z.string().min(1, 'Bank name required'),
+      bankAccountName: z.string().min(1, 'Account name required'),
+      bankAccountNumber: z.string().min(1, 'Account number required'),
+    }),
+  },
+};
+
+type FormData = z.infer<typeof baseSchema>;
 
 const STEPS = [
-  { id: 1, label: 'Personal', icon: User, desc: 'Your name & contact' },
+  { id: 1, label: 'Personal', icon: User, desc: 'Name & contact' },
   { id: 2, label: 'Identity', icon: Hash, desc: 'ID verification' },
-  { id: 3, label: 'Payouts', icon: CreditCard, desc: 'How you get paid' },
-  { id: 4, label: 'Launch', icon: Rocket, desc: 'Ready to earn!' },
+  { id: 3, label: 'Payouts', icon: CreditCard, desc: 'Payment details' },
+  { id: 4, label: 'Launch', icon: Rocket, desc: 'Review & start' },
 ];
-
 const SAMPLE_PRODUCTS = [
   { name: 'Electronics', price: 15000, rate: 0.08 },
   { name: 'Fashion', price: 3500, rate: 0.15 },
@@ -57,27 +72,18 @@ const SAMPLE_PRODUCTS = [
 export function AffiliateOnboardingForm() {
   const router = useRouter();
   const [step, setStep] = useState(1);
-  const [serverError, setServerError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [launched, setLaunched] = useState(false);
-  const [confetti, setConfetti] = useState<Array<{
-    color: string; left: string; top: string; delay: string; duration: string;
-  }>>([]);
 
   const {
-    register, handleSubmit, watch, setValue, trigger,
+    register, handleSubmit, watch, setValue, setError, clearErrors,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { 
-      fullName: '',
-      phone: '',
-      idNumber: '',
+    defaultValues: {
+      fullName: '', phone: '', idNumber: '',
       payoutMethod: 'MPESA',
-      mpesaPhone: '',
-      bankName: '',
-      bankAccountName: '',
-      bankAccountNumber: ''
+      mpesaPhone: '', bankName: '', bankAccountName: '', bankAccountNumber: '',
     },
   });
 
@@ -85,311 +91,270 @@ export function AffiliateOnboardingForm() {
   const payoutMethod = watch('payoutMethod');
   const primaryPhone = watch('phone');
 
-  // Auto-fill M-Pesa phone if it's empty and primary phone exists
   useEffect(() => {
     if (payoutMethod === 'MPESA' && !values.mpesaPhone && primaryPhone) {
       setValue('mpesaPhone', primaryPhone);
     }
   }, [primaryPhone, payoutMethod, setValue, values.mpesaPhone]);
 
-  useEffect(() => {
-    if (launched) {
-      const colors = ['#16a34a', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
-      setConfetti(
-        colors.flatMap((color) =>
-          Array.from({ length: 6 }).map(() => ({
-            color,
-            left: `${Math.random() * 300 - 50}px`,
-            top: `${Math.random() * -60}px`,
-            delay: `${Math.random() * 0.8}s`,
-            duration: `${1.2 + Math.random() * 0.8}s`,
-          }))
-        )
-      );
-      setTimeout(() => router.push('/affiliate'), 2500);
-    }
-  }, [launched, router]);
+  // ── Validate current step using its own isolated schema ──────────────────
+  const nextStep = () => {
+    const vals = values;
 
-  const nextStep = async () => {
-    const fieldMap: Record<number, (keyof FormData)[]> = {
-      1: ['fullName', 'phone'],
-      2: ['idNumber'],
-      3: ['payoutMethod', 'mpesaPhone', 'bankName', 'bankAccountName', 'bankAccountNumber'],
-    };
-    
-    const valid = await trigger(fieldMap[step]);
-    if (valid) {
+    let stepSchema: z.ZodTypeAny;
+    let slice: Record<string, unknown>;
+
+    if (step === 1) {
+      stepSchema = stepSchemas[1];
+      slice = { fullName: vals.fullName, phone: vals.phone };
+    } else if (step === 2) {
+      stepSchema = stepSchemas[2];
+      slice = { idNumber: vals.idNumber };
+    } else if (step === 3) {
+      stepSchema = payoutMethod === 'MPESA' ? stepSchemas[3].MPESA : stepSchemas[3].BANK;
+      slice = payoutMethod === 'MPESA'
+        ? { mpesaPhone: vals.mpesaPhone }
+        : { bankName: vals.bankName, bankAccountName: vals.bankAccountName, bankAccountNumber: vals.bankAccountNumber };
+    } else {
+      setStep(s => s + 1);
+      return;
+    }
+
+    const result = stepSchema.safeParse(slice);
+
+    if (result.success) {
+      // Clear any stale errors for fields in this step
+      Object.keys(slice).forEach(k => clearErrors(k as keyof FormData));
       setStep(s => s + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      // Push each validation error into RHF so fields turn red
+      result.error.errors.forEach((err: z.ZodIssue) => {
+        setError(err.path[0] as keyof FormData, { message: err.message });
+      });
+      toast.error("Please fix the errors before continuing");
     }
   };
 
   const onSubmit = async (data: FormData) => {
-    setServerError('');
     setIsSubmitting(true);
     const result = await submitAffiliateOnboarding(data);
     setIsSubmitting(false);
-
     if (result.error) {
-      setServerError(result.error);
+      toast.error(result.error);
       return;
     }
+    toast.success("Welcome aboard! Redirecting...");
     setLaunched(true);
+    setTimeout(() => router.push('/affiliate'), 2500);
   };
 
   if (launched) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0d1117', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{`
-          @keyframes pop { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
-          @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-          @keyframes confetti { 0%{transform:translateY(-20px) rotate(0);opacity:1} 100%{transform:translateY(120px) rotate(720deg);opacity:0} }
-          .pop { animation: pop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
-          .float { animation: float 2s ease-in-out infinite; }
-          .cp { position:absolute; width:8px; height:8px; border-radius:2px; animation: confetti 1.5s ease-in forwards; }
-        `}</style>
-        <div style={{ textAlign: 'center', position: 'relative' }}>
-          {confetti.map((p, i) => (
-            <div key={i} className="cp" style={{ background: p.color, left: p.left, top: p.top, animationDelay: p.delay, animationDuration: p.duration }} />
-          ))}
-          <div className="pop float" style={{ fontSize: 80, marginBottom: 20 }}>🔗</div>
-          <h1 style={{ fontSize: 36, fontWeight: 900, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.04em' }}>
-            You're an Affiliate!
-          </h1>
-          <p style={{ fontSize: 16, color: '#6b7280' }}>Taking you to your dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center flex-col gap-4 text-center animate-in fade-in zoom-in duration-500">
+        <div className="text-8xl animate-bounce">🔗</div>
+        <h1 className="text-4xl font-black text-white tracking-tight">You're an Affiliate!</h1>
+        <p className="text-gray-500">Setting up your personal dashboard...</p>
       </div>
     );
   }
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-        .ao-wrap { display: flex; min-height: 100vh; font-family: 'DM Sans', sans-serif; background: #f8f7f4; }
-        .ao-left { width: 360px; flex-shrink: 0; background: #0d1117; display: flex; flex-direction: column; padding: 40px 32px; position: sticky; top: 0; height: 100vh; }
-        .ao-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 48px; }
-        .ao-brand-dot { width: 10px; height: 10px; background: #16a34a; border-radius: 50%; }
-        .ao-brand-name { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; color: #fff; }
-        .ao-steps { display: flex; flex-direction: column; gap: 4px; }
-        .ao-step { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; }
-        .ao-step.active { background: rgba(255,255,255,0.06); }
-        .ao-step-num { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; transition: all 0.3s; }
-        .ao-step.done .ao-step-num { background: #16a34a; color: #fff; }
-        .ao-step.active .ao-step-num { background: #fff; color: #111; }
-        .ao-step.pending .ao-step-num { background: rgba(255,255,255,0.07); color: #4b5563; }
-        .ao-step-label { font-size: 13.5px; font-weight: 700; font-family: 'Syne', sans-serif; color: #fff; }
-        .ao-step.pending .ao-step-label { color: #4b5563; }
-        .ao-step-desc { font-size: 11.5px; color: #6b7280; margin-top: 1px; }
-        .ao-step-line { width: 1px; height: 16px; background: rgba(255,255,255,0.06); margin-left: 29px; }
-        .ao-earn-card { margin-top: auto; background: linear-gradient(135deg, #1a1f2e, #111827); border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; padding: 20px; }
-        .ao-earn-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #374151; margin-bottom: 14px; }
-        .ao-earn-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .ao-earn-product { font-size: 12px; color: #6b7280; }
-        .ao-earn-amount { font-size: 14px; font-weight: 800; color: #4ade80; font-family: 'Syne', sans-serif; }
-        .ao-earn-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 12px 0; }
-        .ao-earn-total-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
-        .ao-earn-total { font-size: 24px; font-weight: 900; color: #fff; font-family: 'Syne', sans-serif; letter-spacing: -0.04em; }
-        .ao-right { flex: 1; display: flex; align-items: center; justify-content: center; padding: 60px 48px; overflow-y: auto; }
-        .ao-form-box { width: 100%; max-width: 500px; }
-        .ao-progress { height: 2px; background: #e5e7eb; border-radius: 100px; margin-bottom: 40px; overflow: hidden; }
-        .ao-progress-fill { height: 100%; background: linear-gradient(90deg, #16a34a, #4ade80); border-radius: 100px; transition: width 0.4s cubic-bezier(.34,1.2,.64,1); }
-        .ao-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #16a34a; margin-bottom: 8px; }
-        .ao-title { font-family: 'Syne', sans-serif; font-size: 30px; font-weight: 800; color: #111; letter-spacing: -0.04em; line-height: 1.1; }
-        .ao-subtitle { font-size: 14px; color: #6b7280; margin-top: 6px; margin-bottom: 32px; }
-        .ao-field { margin-bottom: 20px; }
-        .ao-label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
-        .ao-input { width: 100%; padding: 13px 16px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #111; background: #fff; outline: none; transition: all 0.15s; }
-        .ao-input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.08); }
-        .ao-err { font-size: 11.5px; color: #ef4444; margin-top: 5px; }
-        .ao-payout-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
-        .ao-payout-opt { border: 2px solid #e5e7eb; border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s; background: #fff; text-align: center; }
-        .ao-payout-opt.selected { border-color: #16a34a; background: #f0fdf4; }
-        .ao-payout-opt-label { font-size: 13px; font-weight: 700; color: #111; }
-        .ao-nav { display: flex; gap: 12px; margin-top: 36px; }
-        .ao-btn-next { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 24px; background: #111; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; transition: background 0.2s; }
-        .ao-btn-launch { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 24px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 12px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; box-shadow: 0 4px 14px rgba(22,163,74,0.35); }
-        @media (max-width: 900px) { .ao-left { display: none; } .ao-right { padding: 32px 24px; } }
-      `}</style>
-
-      <div className="ao-wrap">
-        <div className="ao-left">
-          <div className="ao-brand">
-            <div className="ao-brand-dot" />
-            <span className="ao-brand-name">AffilMarket</span>
-          </div>
-
-          <div className="ao-steps">
-            {STEPS.map((s, i) => {
-              const state = step === s.id ? 'active' : step > s.id ? 'done' : 'pending';
-              return (
-                <div key={s.id}>
-                  <div className={`ao-step ${state}`}>
-                    <div className="ao-step-num">
-                      {state === 'done' ? '✓' : <s.icon size={14} />}
-                    </div>
-                    <div>
-                      <div className="ao-step-label">{s.label}</div>
-                      <div className="ao-step-desc">{s.desc}</div>
-                    </div>
+    <div className="flex min-h-screen font-sans bg-[#f8f7f4]">
+      <aside className="hidden lg:flex w-90 shrink-0 bg-[#0d1117] flex-col p-10 sticky top-0 h-screen">
+        <div className="flex items-center gap-2.5 mb-12">
+          <div className="w-2.5 h-2.5 bg-green-600 rounded-full" />
+          <span className="font-bold text-lg text-white">AffilMarket</span>
+        </div>
+        <nav className="flex flex-col gap-1">
+          {STEPS.map((s, i) => {
+            const isActive = step === s.id;
+            const isDone = step > s.id;
+            return (
+              <div key={s.id}>
+                <div className={`flex items-center gap-4 p-3 rounded-xl transition-colors ${isActive ? 'bg-white/10' : ''}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 transition-all ${
+                    isDone ? 'bg-green-600 text-white' : isActive ? 'bg-white text-black' : 'bg-white/5 text-gray-600'
+                  }`}>
+                    {isDone ? <Check size={14} /> : <s.icon size={14} />}
                   </div>
-                  {i < STEPS.length - 1 && <div className="ao-step-line" />}
+                  <div>
+                    <div className={`text-sm font-bold ${isActive || isDone ? 'text-white' : 'text-gray-600'}`}>{s.label}</div>
+                    <div className="text-[11px] text-gray-500">{s.desc}</div>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-
-          <div className="ao-earn-card">
-            <div className="ao-earn-label">Potential Earnings Per Sale</div>
-            {SAMPLE_PRODUCTS.map((p) => (
-              <div key={p.name} className="ao-earn-row">
-                <span className="ao-earn-product">{p.name}</span>
-                <span className="ao-earn-amount">+KES {(p.price * p.rate).toLocaleString()}</span>
+                {i < STEPS.length - 1 && <div className="w-px h-4 bg-white/5 ml-7" />}
               </div>
-            ))}
-            <div className="ao-earn-divider" />
-            <div className="ao-earn-total-label">Monthly referral estimate (10 sales)</div>
-            <div className="ao-earn-total">
-              KES {(SAMPLE_PRODUCTS.reduce((s, p) => s + p.price * p.rate, 0) * 10 / SAMPLE_PRODUCTS.length).toLocaleString('en-KE', { maximumFractionDigits: 0 })}+
+            );
+          })}
+        </nav>
+        <div className="mt-auto bg-gradient-to-br from-gray-900 to-black border border-white/10 rounded-2xl p-5">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-4">Potential Earnings</div>
+          {SAMPLE_PRODUCTS.map(p => (
+            <div key={p.name} className="flex justify-between items-center mb-2">
+              <span className="text-xs text-gray-400">{p.name}</span>
+              <span className="text-sm font-bold text-green-400">+KES {(p.price * p.rate).toLocaleString()}</span>
             </div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3 }}>Paid directly to your M-Pesa 💚</div>
+          ))}
+          <div className="h-px bg-white/5 my-3" />
+          <div className="text-xs text-gray-500 mb-1">Estimated Monthly (10 sales)</div>
+          <div className="text-2xl font-black text-white">
+            KES {(SAMPLE_PRODUCTS.reduce((s, p) => s + p.price * p.rate, 0) * 10 / SAMPLE_PRODUCTS.length).toLocaleString()}+
           </div>
         </div>
+      </aside>
 
-        <div className="ao-right">
-          <div className="ao-form-box">
-            <div className="ao-progress">
-              <div className="ao-progress-fill" style={{ width: `${(step / 4) * 100}%` }} />
-            </div>
+      <main className="flex-1 flex items-center justify-center p-6 lg:p-12 overflow-y-auto">
+        <div className="w-full max-w-md">
+          <div className="h-0.5 bg-gray-200 rounded-full mb-10 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500"
+              style={{ width: `${(step / 4) * 100}%` }}
+            />
+          </div>
 
-            {serverError && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#dc2626', marginBottom: 20 }}>
-                {serverError}
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-8">
+
+            {step === 1 && (
+              <div className="animate-in slide-in-from-right-4 duration-300">
+                <div className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">Step 1 of 4</div>
+                <h2 className="text-3xl font-extrabold text-gray-900 leading-tight">Tell us about yourself</h2>
+                <p className="text-sm text-gray-500 mt-2 mb-8">This is how vendors and customers will identify you.</p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase">Full Name</label>
+                    <input {...register('fullName')}
+                      className={`w-full p-3 border-2 rounded-xl text-sm transition-all outline-none ${errors.fullName ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600 focus:ring-4 focus:ring-green-600/5'}`}
+                      placeholder="Jane Muthoni" />
+                    {errors.fullName && <p className="text-xs text-red-500 mt-1.5">{errors.fullName.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase">Phone Number</label>
+                    <input {...register('phone')} type="tel"
+                      className={`w-full p-3 border-2 rounded-xl text-sm transition-all outline-none ${errors.phone ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`}
+                      placeholder="+254..." />
+                    {errors.phone && <p className="text-xs text-red-500 mt-1.5">{errors.phone.message}</p>}
+                  </div>
+                </div>
               </div>
             )}
 
-            <form onSubmit={handleSubmit(onSubmit)} noValidate>
-              {/* STEP 1: Personal */}
-              {step === 1 && (
-                <>
-                  <div className="ao-eyebrow">Step 1 of 4</div>
-                  <div className="ao-title">Tell us about yourself</div>
-                  <div className="ao-subtitle">This is how vendors and customers will know you.</div>
-                  <div className="ao-field">
-                    <label className="ao-label">Full Name *</label>
-                    <input {...register('fullName')} className={`ao-input ${errors.fullName ? 'error' : ''}`} placeholder="Jane Muthoni" />
-                    {errors.fullName && <div className="ao-err">{errors.fullName.message}</div>}
+            {step === 2 && (
+              <div className="animate-in slide-in-from-right-4 duration-300">
+                <div className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">Step 2 of 4</div>
+                <h2 className="text-3xl font-extrabold text-gray-900 leading-tight">Identity Verification</h2>
+                <p className="text-sm text-gray-500 mt-2 mb-8">Required to maintain platform trust.</p>
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase">National ID Number</label>
+                    <input {...register('idNumber')}
+                      className={`w-full p-3 border-2 rounded-xl text-sm outline-none ${errors.idNumber ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`}
+                      placeholder="e.g. 12345678" />
+                    {errors.idNumber && <p className="text-xs text-red-500 mt-1.5">{errors.idNumber.message}</p>}
                   </div>
-                  <div className="ao-field">
-                    <label className="ao-label">Phone Number *</label>
-                    <input {...register('phone')} className={`ao-input ${errors.phone ? 'error' : ''}`} type="tel" placeholder="+254712345678" />
-                    {errors.phone && <div className="ao-err">{errors.phone.message}</div>}
+                  <div className="bg-green-50 border border-green-100 rounded-xl p-4 flex gap-3">
+                    <ShieldCheck className="text-green-600 shrink-0" size={20} />
+                    <p className="text-[13px] text-green-800">Your ID is encrypted and <strong>never shared publicly</strong>.</p>
                   </div>
-                </>
-              )}
+                </div>
+              </div>
+            )}
 
-              {/* STEP 2: Identity */}
-              {step === 2 && (
-                <>
-                  <div className="ao-eyebrow">Step 2 of 4</div>
-                  <div className="ao-title">Verify your identity</div>
-                  <div className="ao-subtitle">Required to protect vendors. Only visible to admins.</div>
-                  <div className="ao-field">
-                    <label className="ao-label">National ID Number</label>
-                    <input {...register('idNumber')} className="ao-input" placeholder="e.g. 12345678" />
-                    {errors.idNumber && <div className="ao-err">{errors.idNumber.message}</div>}
-                  </div>
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '14px 16px', fontSize: 13, color: '#15803d', display: 'flex', gap: 10 }}>
-                    <span style={{ fontSize: 16 }}>🔒</span>
-                    <span>Your ID is encrypted and <strong>never shared publicly</strong>.</span>
-                  </div>
-                </>
-              )}
-
-              {/* STEP 3: Payouts */}
-              {step === 3 && (
-                <>
-                  <div className="ao-eyebrow">Step 3 of 4</div>
-                  <div className="ao-title">How do you want to get paid?</div>
-                  <div className="ao-subtitle">Commissions are released after order delivery.</div>
-                  <div className="ao-payout-toggle">
-                    <div className={`ao-payout-opt${payoutMethod === 'MPESA' ? ' selected' : ''}`} onClick={() => setValue('payoutMethod', 'MPESA')}>
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>📱</div>
-                      <div className="ao-payout-opt-label">M-Pesa</div>
-                      <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 2 }}>Instant · No fee</div>
-                    </div>
-                    <div className={`ao-payout-opt${payoutMethod === 'BANK' ? ' selected' : ''}`} onClick={() => setValue('payoutMethod', 'BANK')}>
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>🏦</div>
-                      <div className="ao-payout-opt-label">Bank Transfer</div>
-                      <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 2 }}>1–3 days · KES 50 fee</div>
-                    </div>
-                  </div>
-
-                  {payoutMethod === 'MPESA' ? (
-                    <div className="ao-field">
-                      <label className="ao-label">M-Pesa Phone Number *</label>
-                      <input {...register('mpesaPhone')} className="ao-input" type="tel" placeholder="+254..." />
-                      {errors.mpesaPhone && <div className="ao-err">{errors.mpesaPhone.message}</div>}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="ao-field">
-                        <label className="ao-label">Bank Name *</label>
-                        <select {...register('bankName')} className="ao-input">
-                          <option value="">Select bank...</option>
-                          {['KCB', 'Equity', 'Co-op', 'Absa', 'NCBA', 'Family'].map(b => <option key={b} value={b}>{b} Bank</option>)}
-                        </select>
-                        {errors.bankName && <div className="ao-err">{errors.bankName.message}</div>}
-                      </div>
-                      <div className="ao-field">
-                        <label className="ao-label">Account Number *</label>
-                        <input {...register('bankAccountNumber')} className="ao-input" placeholder="0123456789" />
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* STEP 4: Review */}
-              {step === 4 && (
-                <>
-                  <div className="ao-eyebrow">Step 4 of 4</div>
-                  <div className="ao-title">Ready to start earning 🚀</div>
-                  <div className="ao-subtitle">Review your details before we set up your account.</div>
-                  <div style={{ background: '#f9fafb', borderRadius: 14, padding: '4px 16px', marginBottom: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
-                      <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>NAME</span>
-                      <span style={{ fontSize: 13.5, color: '#111', fontWeight: 700 }}>{values.fullName}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0' }}>
-                      <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600 }}>PAYOUT</span>
-                      <span style={{ fontSize: 13.5, color: '#111', fontWeight: 700 }}>{values.payoutMethod === 'MPESA' ? 'M-Pesa' : 'Bank'}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="ao-nav">
-                {step > 1 && (
-                  <button type="button" className="ao-btn-back" onClick={() => setStep(s => s - 1)}>
-                    <ChevronLeft size={15} /> Back
+            {step === 3 && (
+              <div className="animate-in slide-in-from-right-4 duration-300">
+                <div className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">Step 3 of 4</div>
+                <h2 className="text-3xl font-extrabold text-gray-900 leading-tight">Payout Preferences</h2>
+                <p className="text-sm text-gray-500 mt-2 mb-8">How would you like to receive your commissions?</p>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <button type="button" onClick={() => setValue('payoutMethod', 'MPESA')}
+                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${payoutMethod === 'MPESA' ? 'border-green-600 bg-green-50' : 'border-gray-100 bg-white'}`}>
+                    <Smartphone className={payoutMethod === 'MPESA' ? 'text-green-600' : 'text-gray-400'} />
+                    <span className="text-sm font-bold">M-Pesa</span>
                   </button>
-                )}
-                {step < 4 ? (
-                  <button type="button" className="ao-btn-next" onClick={nextStep}>
-                    Continue <ChevronRight size={15} />
+                  <button type="button" onClick={() => setValue('payoutMethod', 'BANK')}
+                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${payoutMethod === 'BANK' ? 'border-green-600 bg-green-50' : 'border-gray-100 bg-white'}`}>
+                    <Banknote className={payoutMethod === 'BANK' ? 'text-green-600' : 'text-gray-400'} />
+                    <span className="text-sm font-bold">Bank</span>
                   </button>
+                </div>
+
+                {payoutMethod === 'MPESA' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase">M-Pesa Number</label>
+                    <input {...register('mpesaPhone')}
+                      className={`w-full p-3 border-2 rounded-xl text-sm outline-none ${errors.mpesaPhone ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`} />
+                    {errors.mpesaPhone && <p className="text-xs text-red-500 mt-1.5">{errors.mpesaPhone.message}</p>}
+                  </div>
                 ) : (
-                  <button type="submit" className="ao-btn-launch" disabled={isSubmitting}>
-                    {isSubmitting ? <><Loader2 size={15} className="animate-spin" /> Setting up...</> : <>🔗 Start Earning</>}
-                  </button>
+                  <div className="space-y-4">
+                    <div>
+                      <select {...register('bankName')}
+                        className={`w-full p-3 border-2 rounded-xl text-sm outline-none ${errors.bankName ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`}>
+                        <option value="">Select Bank...</option>
+                        {['KCB', 'Equity', 'Co-op', 'Absa'].map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                      {errors.bankName && <p className="text-xs text-red-500 mt-1.5">{errors.bankName.message}</p>}
+                    </div>
+                    <div>
+                      <input {...register('bankAccountName')} placeholder="Account Name"
+                        className={`w-full p-3 border-2 rounded-xl text-sm outline-none ${errors.bankAccountName ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`} />
+                      {errors.bankAccountName && <p className="text-xs text-red-500 mt-1.5">{errors.bankAccountName.message}</p>}
+                    </div>
+                    <div>
+                      <input {...register('bankAccountNumber')} placeholder="Account Number"
+                        className={`w-full p-3 border-2 rounded-xl text-sm outline-none ${errors.bankAccountNumber ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-green-600'}`} />
+                      {errors.bankAccountNumber && <p className="text-xs text-red-500 mt-1.5">{errors.bankAccountNumber.message}</p>}
+                    </div>
+                  </div>
                 )}
               </div>
-            </form>
-          </div>
+            )}
+
+            {step === 4 && (
+              <div className="animate-in slide-in-from-right-4 duration-300">
+                <div className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">Final Step</div>
+                <h2 className="text-3xl font-extrabold text-gray-900 leading-tight">Ready to earn? 🚀</h2>
+                <p className="text-sm text-gray-500 mt-2 mb-8">Quick review of your setup.</p>
+                <div className="bg-gray-50 rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Account Name</span>
+                    <span className="font-bold">{values.fullName}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Payout Via</span>
+                    <span className="font-bold text-green-600">{values.payoutMethod}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">ID Verification</span>
+                    <span className="font-mono">***{values.idNumber.slice(-3)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              {step > 1 && (
+                <button type="button" onClick={() => setStep(s => s - 1)}
+                  className="px-6 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2">
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+              {step < 4 ? (
+                <button type="button" onClick={nextStep}
+                  className="flex-1 bg-black text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-600 transition-all">
+                  Continue <ChevronRight size={18} />
+                </button>
+              ) : (
+                <button type="submit" disabled={isSubmitting}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-all disabled:opacity-50">
+                  {isSubmitting ? <Loader2 className="animate-spin" /> : 'Start Earning'}
+                </button>
+              )}
+            </div>
+
+          </form>
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

@@ -80,7 +80,7 @@ export const verifications = pgTable('verifications', {
 
 // ─── VENDOR PROFILES ─────────────────────────────────
 export const vendorProfiles = pgTable('vendor_profiles', {
-  id:             uuid('id').primaryKey(),
+  id:             uuid('id').primaryKey().defaultRandom(),
   userId:         text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }), // ← text
   shopName:       text('shop_name').notNull(),
   legalName:      text('legal_name'),
@@ -96,7 +96,7 @@ export const vendorProfiles = pgTable('vendor_profiles', {
   isOnboarded:    boolean('is_onboarded').default(false).notNull(),
   avgRating:      decimal('avg_rating', { precision: 3, scale: 2 }),
   createdAt:      timestamp('created_at').notNull().defaultNow(),
-  updatedAt:      timestamp('updated_at').notNull().$onUpdate(() => new Date()),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()), // ← add defaultNow()
 },
   (table) =>[ 
     index('vendor_user_idx').on(table.userId),

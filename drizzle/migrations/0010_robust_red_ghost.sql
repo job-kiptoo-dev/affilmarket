@@ -1,0 +1,1 @@
+ALTER TABLE "vendor_profiles" ALTER COLUMN "updated_at" SET DEFAULT now();
