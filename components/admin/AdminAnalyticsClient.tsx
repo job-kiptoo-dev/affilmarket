@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { getAnalyticsData, AnalyticsData, AnalyticsPeriod } from "@/action/AdminAnalyticalAction";
 import { C, FUNNEL_COLORS } from "@/types/admin-analytics-type";
+import { fmtK } from "@/lib/healpers/admin-orders-client";
+import { delta, fmtHour, pct, shortDate } from "@/lib/healpers/admin-analytics";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
