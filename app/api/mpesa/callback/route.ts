@@ -14,7 +14,6 @@ import { and, eq, sql } from 'drizzle-orm';
 import { sendOrderConfirmationEmail } from '@/lib/resend';
 import { randomUUID } from 'crypto';
 
-// Safaricom IP whitelist
 const SAFARICOM_IPS = [
   '196.201.214.200', '196.201.214.206', '196.201.213.114',
   '196.201.214.207', '196.201.214.208', '196.201.213.44',
@@ -31,26 +30,19 @@ export async function POST(req: NextRequest) {
       '';
 
     const isSandbox = process.env.MPESA_ENVIRONMENT !== 'live';
-
     if (!isSandbox && !SAFARICOM_IPS.includes(clientIp)) {
       console.warn('[callback] IP not whitelisted:', clientIp);
       return NextResponse.json({ ok: true });
     }
 
-    const body = await req.json();
+    const body     = await req.json();
     const callback = body?.Body?.stkCallback;
-
     if (!callback) return NextResponse.json({ ok: true });
 
-    const {
-      CheckoutRequestID,
-      ResultCode,
-      ResultDesc,
-      CallbackMetadata,
-    } = callback;
-
+    const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = callback;
     console.log('[callback]', { CheckoutRequestID, ResultCode });
-      // ── Find transaction ───────────────────────────────
+
+    // ── Find transaction ───────────────────────────────
     const txn = await db
       .select()
       .from(mpesaTransactions)
@@ -70,25 +62,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── Parse metadata ────────────────────────────────
+    // ── Parse metadata ─────────────────────────────────
     const meta: Record<string, any> = {};
     (CallbackMetadata?.Item ?? []).forEach((item: any) => {
       meta[item.Name] = item.Value;
     });
 
-    // =================================================
+    // ═══════════════════════════════════════════════════
     // PAYMENT SUCCESS
-    // =================================================
+    // ═══════════════════════════════════════════════════
     if (ResultCode === 0) {
       console.log('[callback] PAYMENT SUCCESS');
 
       await db.update(mpesaTransactions)
         .set({
-          status: 'SUCCESS',
+          status:             'SUCCESS',
           mpesaReceiptNumber: meta.MpesaReceiptNumber ?? null,
-          resultCode: 0,
-          resultDesc: ResultDesc,
-          rawCallback: body,
+          resultCode:         0,
+          resultDesc:         ResultDesc,
+          rawCallback:        body,
         })
         .where(eq(mpesaTransactions.checkoutRequestId, CheckoutRequestID));
 
@@ -98,38 +90,55 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      // ── Get platform fee ─────────────────────────────
+      // ── Get platform fee rate ──────────────────────
       const feeSetting = await db
         .select({ value: platformSettings.value })
         .from(platformSettings)
         .where(eq(platformSettings.key, 'platform_fee_rate'))
         .limit(1);
 
-      const platformFeeRate = parseFloat(feeSetting[0]?.value ?? '0.05');
+      const platformFeeRate  = parseFloat(feeSetting[0]?.value ?? '0.05');
+      const unitPrice        = parseFloat(checkout.unitPrice);
+      const totalAmount      = unitPrice * checkout.quantity;
+      const commissionRate   = parseFloat(checkout.affiliateCommissionRate ?? '0');
+      const hasAffiliate     = !!checkout.affiliateId;
 
-      const unitPrice = parseFloat(checkout.unitPrice);
-      const totalAmount = unitPrice * checkout.quantity;
+      // ── Split calculation ──────────────────────────
+      //
+      // WITH affiliate:
+      //   platformFee        = totalAmount × platformFeeRate
+      //   affiliateCommission = totalAmount × commissionRate
+      //   vendorEarnings     = totalAmount - platformFee - affiliateCommission
+      //
+      // WITHOUT affiliate:
+      //   platformFee        = totalAmount × platformFeeRate
+      //                      + totalAmount × commissionRate  ← unclaimed commission goes to admin
+      //   affiliateCommission = 0
+      //   vendorEarnings     = totalAmount - platformFee  (same cut for vendor either way)
 
-      const commissionRate = parseFloat(
-        checkout.affiliateCommissionRate ?? '0'
-      );
+      const affiliateCommission = hasAffiliate
+        ? totalAmount * commissionRate
+        : 0;
 
-      const affiliateCommission =
-        checkout.affiliateId
-          ? totalAmount * commissionRate
-          : 0;
+      const platformFee = hasAffiliate
+        ? totalAmount * platformFeeRate
+        : totalAmount * platformFeeRate + totalAmount * commissionRate; // ← admin gets unclaimed commission
 
-      const platformFee = totalAmount * platformFeeRate;
+      const vendorEarnings = totalAmount - platformFee - affiliateCommission;
 
-      const vendorEarnings =
-        totalAmount - platformFee - affiliateCommission;
+      console.log('[callback] split:', {
+        totalAmount,
+        platformFee,
+        affiliateCommission,
+        vendorEarnings,
+        hasAffiliate,
+      });
 
-      // ── Atomic stock decrement ───────────────────────
+      // ── Atomic stock decrement ─────────────────────
       const stock = await db
         .update(products)
         .set({
-          stockQuantity:
-            sql`${products.stockQuantity} - ${checkout.quantity}`,
+          stockQuantity: sql`${products.stockQuantity} - ${checkout.quantity}`,
         })
         .where(
           and(
@@ -144,199 +153,145 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      // ── Create Order ────────────────────────────────
-      const orderId = crypto.randomUUID();
+      // ── Create Order ───────────────────────────────
+      const orderId = randomUUID();
 
       await db.insert(orders).values({
-        id: orderId,
-        vendorId: checkout.vendorId,
-        affiliateId: checkout.affiliateId ?? null,
-        productId: checkout.productId,
-        price: String(unitPrice),
-        quantity: checkout.quantity,
-        totalAmount: String(totalAmount),
-
-        customerName: checkout.customerName,
-        customerPhone: checkout.customerPhone,
-        customerEmail: checkout.customerEmail ?? null,
-
-        city: checkout.city ?? null,
-        address: checkout.address ?? null,
-        notes: checkout.notes ?? null,
-
-        paymentStatus: 'PAID',
-        orderStatus: 'CONFIRMED',
-
-        mpesaReceiptNumber: meta.MpesaReceiptNumber ?? null,
-        paymentReference: meta.MpesaReceiptNumber ?? null,
-
-        platformFee: String(platformFee),
-        affiliateCommission: String(affiliateCommission),
-        vendorEarnings: String(vendorEarnings),
-        platformRevenue: String(platformFee),
-
+        id:                  orderId,
+        vendorId:            checkout.vendorId,
+        affiliateId:         checkout.affiliateId ?? null,
+        productId:           checkout.productId,
+        price:               String(unitPrice),
+        quantity:            checkout.quantity,
+        totalAmount:         String(totalAmount),
+        customerName:        checkout.customerName,
+        customerPhone:       checkout.customerPhone,
+        customerEmail:       checkout.customerEmail ?? null,
+        city:                checkout.city    ?? null,
+        address:             checkout.address ?? null,
+        notes:               checkout.notes   ?? null,
+        paymentStatus:       'PAID',
+        orderStatus:         'CONFIRMED',
+        mpesaReceiptNumber:  meta.MpesaReceiptNumber ?? null,
+        paymentReference:    meta.MpesaReceiptNumber ?? null,
+        platformFee:         String(platformFee),         // ← includes unclaimed commission when no affiliate
+        affiliateCommission: String(affiliateCommission), // ← 0 when no affiliate
+        vendorEarnings:      String(vendorEarnings),
+        platformRevenue:     String(platformFee),         // ← same as platformFee
         commissionsComputed: true,
-        balancesReleased: false,
+        balancesReleased:    false,
       });
 
-      // link transaction
+      // link transaction to order
       await db.update(mpesaTransactions)
         .set({ orderId })
         .where(eq(mpesaTransactions.id, transaction.id));
 
+      // ── Credit Vendor (pending) ────────────────────
+      const vendor = await db
+        .select({ userId: vendorProfiles.userId })
+        .from(vendorProfiles)
+        .where(eq(vendorProfiles.id, checkout.vendorId))
+        .limit(1);
 
-        // ── Credit Vendor ───────────────────────────────
-// ── Credit Vendor ───────────────────────────────
-const vendor = await db
-  .select({ userId: vendorProfiles.userId })
-  .from(vendorProfiles)
-  .where(eq(vendorProfiles.id, checkout.vendorId))
-  .limit(1);
+      if (vendor.length) {
+        await db
+          .insert(balances)
+          .values({
+            id:               randomUUID(),
+            userId:           vendor[0].userId,
+            pendingBalance:   String(vendorEarnings),
+            availableBalance: '0.00',
+            paidOutTotal:     '0.00',
+          })
+          .onConflictDoUpdate({
+            target: balances.userId,
+            set: {
+              pendingBalance: sql`${balances.pendingBalance} + ${vendorEarnings}`,
+            },
+          });
+      }
 
-if (vendor.length) {
-  await db
-    .insert(balances)
-    .values({
-            id:               randomUUID(),   // ← add this
-      userId:           vendor[0].userId,
-      pendingBalance:   String(vendorEarnings),
-      availableBalance: '0.00',
-      paidOutTotal:     '0.00',
-    })
-    .onConflictDoUpdate({
-      target: balances.userId,
-      set: {
-        pendingBalance: sql`${balances.pendingBalance} + ${vendorEarnings}`,
-      },
-    });
-}
+      // ── Credit Affiliate (pending) — only if order has affiliate ──
+      if (hasAffiliate && affiliateCommission > 0) {
+        const aff = await db
+          .select({ userId: affiliateProfiles.userId })
+          .from(affiliateProfiles)
+          .where(eq(affiliateProfiles.id, checkout.affiliateId))
+          .limit(1);
 
-// ── Credit Affiliate ────────────────────────────
-if (checkout.affiliateId && affiliateCommission > 0) {
-  const aff = await db
-    .select({ userId: affiliateProfiles.userId })
-    .from(affiliateProfiles)
-    .where(eq(affiliateProfiles.id, checkout.affiliateId))
-    .limit(1);
+        if (aff.length) {
+          await db
+            .insert(balances)
+            .values({
+              id:               randomUUID(),
+              userId:           aff[0].userId,
+              pendingBalance:   String(affiliateCommission),
+              availableBalance: '0.00',
+              paidOutTotal:     '0.00',
+            })
+            .onConflictDoUpdate({
+              target: balances.userId,
+              set: {
+                pendingBalance: sql`${balances.pendingBalance} + ${affiliateCommission}`,
+              },
+            });
+        }
+      }
 
-  if (aff.length) {
-    await db
-      .insert(balances)
-      .values({
-        id:               randomUUID(),
-        userId:           aff[0].userId,
-        pendingBalance:   String(affiliateCommission),
-        availableBalance: '0.00',
-        paidOutTotal:     '0.00',
-      })
-      .onConflictDoUpdate({
-        target: balances.userId,
-        set: {
-          pendingBalance: sql`${balances.pendingBalance} + ${affiliateCommission}`,
-        },
-      });
-  }
-}
+      // ── Credit Admin (available immediately) ───────
+      // platformFee already includes unclaimed affiliate commission
+      // when there is no affiliate on the order
+      const admin = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.role, 'ADMIN'))
+        .limit(1);
 
-// ── Credit Platform (Admin) ─────────────────────
-const admin = await db
-  .select({ id: users.id })
-  .from(users)
-  .where(eq(users.role, 'ADMIN'))
-  .limit(1);
+      if (admin.length) {
+        await db
+          .insert(balances)
+          .values({
+            id:               randomUUID(),
+            userId:           admin[0].id,
+            availableBalance: String(platformFee),
+            pendingBalance:   '0.00',
+            paidOutTotal:     '0.00',
+          })
+          .onConflictDoUpdate({
+            target: balances.userId,
+            set: {
+              availableBalance: sql`${balances.availableBalance} + ${platformFee}`,
+            },
+          });
+      }
 
-if (admin.length) {
-  await db
-    .insert(balances)
-    .values({
-            id:               randomUUID(),   // ← add this
-      userId:           admin[0].id,
-      availableBalance: String(platformFee),  // admin gets it immediately, no pending
-      pendingBalance:   '0.00',
-      paidOutTotal:     '0.00',
-    })
-    .onConflictDoUpdate({
-      target: balances.userId,
-      set: {
-        availableBalance: sql`${balances.availableBalance} + ${platformFee}`,
-      },
-    });
-}
-
-      // // ── Credit Vendor ───────────────────────────────
-      // const vendor = await db
-      //   .select({ userId: vendorProfiles.userId })
-      //   .from(vendorProfiles)
-      //   .where(eq(vendorProfiles.id, checkout.vendorId))
-      //   .limit(1);
-      //
-      // if (vendor.length) {
-      //   await db.update(balances)
-      //     .set({
-      //       pendingBalance:
-      //         sql`${balances.pendingBalance} + ${vendorEarnings}`,
-      //     })
-      //     .where(eq(balances.userId, vendor[0].userId));
-      // }
-      //
-      // // ── Credit Affiliate ────────────────────────────
-      // if (checkout.affiliateId && affiliateCommission > 0) {
-      //   const aff = await db
-      //     .select({ userId: affiliateProfiles.userId })
-      //     .from(affiliateProfiles)
-      //     .where(eq(affiliateProfiles.id, checkout.affiliateId))
-      //     .limit(1);
-      //
-      //   if (aff.length) {
-      //     await db.update(balances)
-      //       .set({
-      //         pendingBalance:
-      //           sql`${balances.pendingBalance} + ${affiliateCommission}`,
-      //       })
-      //       .where(eq(balances.userId, aff[0].userId));
-      //   }
-      // }
-
-      // // ── Credit Platform ─────────────────────────────
-      // const admin = await db
-      //   .select({ id: users.id })
-      //   .from(users)
-      //   .where(eq(users.role, 'ADMIN'))
-      //   .limit(1);
-      //
-      // if (admin.length) {
-      //   await db.update(balances)
-      //     .set({
-      //       availableBalance:
-      //         sql`${balances.availableBalance} + ${platformFee}`,
-      //     })
-      //     .where(eq(balances.userId, admin[0].id));
-      // }
-
-      console.log('[email] checkout email:', checkout.customerEmail);
-
-      // ── Send Email (non-blocking) ───────────────────
-      if (checkout.customerEmail ) {
+      // ── Send confirmation email (non-blocking) ─────
+      if (checkout.customerEmail) {
         sendOrderConfirmationEmail({
           customerEmail: checkout.customerEmail,
-          customerName: checkout.customerName,
-          productTitle: checkout.productTitle ?? 'Your Order',
+          customerName:  checkout.customerName,
+          productTitle:  checkout.productTitle ?? 'Your Order',
           totalAmount,
           orderId,
-          shopName: checkout.shopName ?? 'Vendor',
-          mpesaReceipt: meta.MpesaReceiptNumber ?? null,
+          shopName:      checkout.shopName ?? 'Vendor',
+          mpesaReceipt:  meta.MpesaReceiptNumber ?? null,
         }).catch(console.error);
       }
 
       console.log('[callback] ORDER CREATED:', orderId);
+
     } else {
-      console.log('[callback] PAYMENT FAILED');
+      // ═══════════════════════════════════════════════
+      // PAYMENT FAILED
+      // ═══════════════════════════════════════════════
+      console.log('[callback] PAYMENT FAILED:', ResultDesc);
 
       await db.update(mpesaTransactions)
         .set({
-          status: 'FAILED',
-          resultCode: ResultCode,
-          resultDesc: ResultDesc,
+          status:      'FAILED',
+          resultCode:  ResultCode,
+          resultDesc:  ResultDesc,
           rawCallback: body,
         })
         .where(eq(mpesaTransactions.id, transaction.id));
