@@ -1,12 +1,14 @@
 import { db }          from '@/lib/utils/db';
 import { products, vendorProfiles, categories } from '@/drizzle/schema';
-import { eq, desc, and, ilike, or, isNull } from 'drizzle-orm';
+import { eq, desc, and, ilike, or, isNull, gt } from 'drizzle-orm';
 import Link            from 'next/link';
 import { formatKES }   from '@/lib/utils';
 import { ShoppingBag, Search } from 'lucide-react';
 
 async function getProducts(search?: string, categorySlug?: string) {
-  const conditions = [eq(products.status, 'active')];
+  const conditions = [eq(products.status, 'active'),
+    gt(products.stockQuantity, 0),
+  ];
 
   if (search) {
     conditions.push(

@@ -2,7 +2,7 @@
 import { headers }       from 'next/headers';
 // import { db }            from '@/lib/db';
 import { products as productsTable, categories as categoriesTable, vendorProfiles, reviews, orders } from '@/drizzle/schema';
-import { eq, desc, isNull, count } from 'drizzle-orm';
+import { eq, desc, isNull, count, gt, and } from 'drizzle-orm';
 import { Navbar }        from '@/components/layout/navbar';
 import { HeroSection }   from '@/components/layout/hero-section';
 import { StatsBar }      from '@/components/layout/stats-bar';
@@ -36,7 +36,12 @@ async function getFeaturedProducts() {
     .from(productsTable)
     .leftJoin(vendorProfiles,    eq(productsTable.vendorId,   vendorProfiles.id))
     .leftJoin(categoriesTable,   eq(productsTable.categoryId, categoriesTable.id))
-    .where(eq(productsTable.status, 'active'))
+   
+    .where(and(
+       // eq(productsTable.isFeatured, true),
+       eq(productsTable.status, 'active'),
+       gt(productsTable.stockQuantity, 0),
+    ))
     .orderBy(desc(productsTable.createdAt))
     .limit(8);
 }
@@ -51,7 +56,11 @@ async function getCategories() {
       productCount: count(productsTable.id),
     })
     .from(categoriesTable)
-    .leftJoin(productsTable, eq(categoriesTable.id, productsTable.categoryId))
+    .leftJoin(productsTable, and(
+       eq(categoriesTable.id, productsTable.categoryId),
+        eq(productsTable.status, 'active'),   
+        gt(productsTable.stockQuantity, 0),
+                                ))
     .where(isNull(categoriesTable.parentId))
     .groupBy(
       categoriesTable.id,
