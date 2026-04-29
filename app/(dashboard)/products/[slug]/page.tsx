@@ -34,7 +34,10 @@ async function getProduct(slug: string) {
     .leftJoin(vendorProfiles, eq(products.vendorId, vendorProfiles.id))
     .leftJoin(categories,     eq(products.categoryId, categories.id))
     .leftJoin((await import('@/drizzle/schema')).orders, eq(products.id, (await import('@/drizzle/schema')).orders.productId))
-    .where(eq(products.slug, slug))
+    .where(and(
+      eq (products.slug, slug),
+      eq (products.status, 'active'),
+              ))
     .groupBy(
       products.id, vendorProfiles.shopName, vendorProfiles.description,
       vendorProfiles.logoUrl, categories.name,
@@ -200,14 +203,31 @@ export default async function ProductPage({
               {product.shortDescription && (
                 <div className="pp-desc">{product.shortDescription}</div>
               )}
-              {product.stockQuantity > 0 && (
-                <Link
-                  href={`/checkout/${product.slug}${aff ? `?aff=${aff}` : ''}`}
-                  className="pp-buy-btn"
-                >
-                  <ShoppingBag size={16} /> Buy Now — {formatKES(price)}
-                </Link>
-              )}
+
+{/* Replace your current buy button section with this */}
+{product.stockQuantity > 0 ? (
+  <Link
+    href={`/checkout/${product.slug}${aff ? `?aff=${aff}` : ''}`}
+    className="pp-buy-btn"
+  >
+    <ShoppingBag size={16} /> Buy Now — {formatKES(price)}
+  </Link>
+) : (
+  <div style={{
+    marginTop:     20,
+    padding:       '14px',
+    background:    '#fef2f2',
+    border:        '1px solid #fecaca',
+    borderRadius:  12,
+    textAlign:     'center',
+    fontSize:      14,
+    fontWeight:    700,
+    color:         '#dc2626',
+  }}>
+    ⚠️ Out of stock — check back later
+  </div>
+)}
+
             </div>
 
             {aff && (

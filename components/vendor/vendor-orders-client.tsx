@@ -350,10 +350,6 @@ export function VendorOrdersClient({ orders, activeStatus }: Props) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
                               <CheckCircle size={14} /> Order complete — earnings released
                                <div style={{ marginTop: 16 }}>
-    <ReviewForm
-      orderId={order.id}
-      productTitle={order.productTitle}
-    />
   </div>
                             </div>
                           )}

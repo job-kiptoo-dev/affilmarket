@@ -483,7 +483,7 @@ export function VendorProductsClient({ products, stats }: Props) {
             <p className="vp-subtitle">Manage your product listings across the marketplace</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Link href="vendor/products/new/" className="vp-btn-primary">
+            <Link href="/vendor/products/new" className="vp-btn-primary">
               <Plus size={15} /> Add Product
             </Link>
           </div>

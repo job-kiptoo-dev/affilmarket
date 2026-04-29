@@ -10,6 +10,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ProductReviewButtons } from "@/components/admin/ProductReviewButtons";
 import { Package, Store, Tag, ImageOff } from "lucide-react";
 import { STATUS_CONFIG } from "@/types/status";
+import { DeactivateButton } from "@/components/admin/DeactivateButton";
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -205,28 +206,49 @@ export default async function AdminProductsPage({
                       )}
                     </div>
 
-                    {/* Price / commission / stock */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-gray-50 rounded-xl p-2.5 text-center border border-gray-100">
-                        <div className="text-xs font-bold text-gray-900 leading-tight">
-                          {formatKES(price)}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Price</div>
-                      </div>
-                      <div className="bg-green-50 rounded-xl p-2.5 text-center border border-green-100">
-                        <div className="text-xs font-bold text-green-700 leading-tight">
-                          {(commRate * 100).toFixed(0)}%
-                        </div>
-                        <div className="text-[10px] text-green-600 mt-0.5 uppercase tracking-wide">Commission</div>
-                      </div>
-                      <div className="bg-gray-50 rounded-xl p-2.5 text-center border border-gray-100">
-                        <div className="text-xs font-bold text-gray-900 leading-tight">
-                          {product.stockQuantity}
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Stock</div>
-                      </div>
-                    </div>
+{/* Price / commission / stock */}
+<div className="grid grid-cols-3 gap-2">
+  <div className="bg-gray-50 rounded-xl p-2.5 text-center border border-gray-100">
+    <div className="text-xs font-bold text-gray-900 leading-tight">
+      {formatKES(price)}
+    </div>
+    <div className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Price</div>
+  </div>
+  <div className="bg-green-50 rounded-xl p-2.5 text-center border border-green-100">
+    <div className="text-xs font-bold text-green-700 leading-tight">
+      {(commRate * 100).toFixed(0)}%
+    </div>
+    <div className="text-[10px] text-green-600 mt-0.5 uppercase tracking-wide">Commission</div>
+  </div>
 
+  {/* ── Stock cell with out of stock warning ── */}
+  <div className={`rounded-xl p-2.5 text-center border ${
+    product.stockQuantity === 0
+      ? 'bg-red-50 border-red-200'
+      : 'bg-gray-50 border-gray-100'
+  }`}>
+    <div className={`text-xs font-bold leading-tight ${
+      product.stockQuantity === 0 ? 'text-red-600' : 'text-gray-900'
+    }`}>
+      {product.stockQuantity === 0 ? '⚠️ 0' : product.stockQuantity}
+    </div>
+    <div className={`text-[10px] mt-0.5 uppercase tracking-wide ${
+      product.stockQuantity === 0 ? 'text-red-400' : 'text-gray-400'
+    }`}>
+      {product.stockQuantity === 0 ? 'No stock' : 'In stock'}
+    </div>
+  </div>
+</div>
+
+{/* ── Out of stock alert banner ── */}
+{product.stockQuantity === 0 && (
+  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 font-semibold flex items-center gap-2">
+    ⚠️ Out of stock —
+    {status === 'pending_approval'
+      ? ' approving will set to inactive until vendor adds stock.'
+      : ' this product should be deactivated.'}
+  </div>
+)}
                     {/* Submitted date */}
                     <p className="text-[11px] text-gray-400">
                       Submitted {new Date(product.createdAt).toLocaleDateString("en-KE", {
@@ -252,14 +274,28 @@ export default async function AdminProductsPage({
                     </a>
 
                     {/* Approve / Reject — only shown for pending */}
-                    {status === "pending_approval" && (
-                      <div className="mt-auto pt-2 border-t border-gray-50">
-                        <ProductReviewButtons
-                          productId={product.id}
-                          productTitle={product.title}
-                        />
-                      </div>
-                    )}
+{/* ── Pending approval actions ── */}
+{status === 'pending_approval' && (
+  <div className="mt-auto pt-2 border-t border-gray-50">
+    <ProductReviewButtons
+      productId={product.id}
+      productTitle={product.title}
+    />
+  </div>
+)}
+
+{/* ── Active product actions ── */}
+{status === 'active' && (
+  <div className="mt-auto pt-2 border-t border-gray-50">
+    <DeactivateButton
+      productId={product.id}
+      productTitle={product.title}
+      isOutOfStock={product.stockQuantity === 0}
+    />
+  </div>
+)}
+
+
                   </div>
                 </div>
               );

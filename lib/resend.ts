@@ -61,6 +61,7 @@ export async function sendDeliveryConfirmationEmail({
                     This releases payment to the vendor.
                   </p>
 
+
                   <!-- CTA -->
                   <div style="text-align:center;margin-bottom:24px;">
                     <a href="{confirmUrl}"

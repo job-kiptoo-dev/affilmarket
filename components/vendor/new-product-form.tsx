@@ -367,39 +367,102 @@ export function NewProductForm({ categories }: Props) {
   }, [clearError]);
 
   // ── Validation ─────────────────────────────────────────────────────────────
+  // const validate = useCallback((): boolean => {
+  //   const e: FieldError = {};
+  //
+  //   const title = form.title.trim();
+  //   if (!title)                e.title = 'Product title is required';
+  //   else if (title.length < 3) e.title = 'Title must be at least 3 characters';
+  //   else if (title.length > 200) e.title = 'Title must be under 200 characters';
+  //
+  //   if (form.shortDescription.length > 300)
+  //     e.shortDescription = 'Short description must be 300 characters or fewer';
+  //
+  //   const price = Number(form.price);
+  //   if (!form.price)             e.price = 'Price is required';
+  //   else if (isNaN(price))       e.price = 'Price must be a number';
+  //   else if (price <= 0)         e.price = 'Price must be greater than 0';
+  //   else if (price > 10_000_000) e.price = 'Price seems too high — please double-check';
+  //
+  //   const stock = Number(form.stockQuantity);
+  //   if (isNaN(stock))              e.stockQuantity = 'Stock quantity must be a number';
+  //   else if (stock < 0)            e.stockQuantity = 'Stock quantity cannot be negative';
+  //   else if (!Number.isInteger(stock)) e.stockQuantity = 'Stock quantity must be a whole number';
+  //
+  //   const comm = Number(form.affiliateCommissionRate);
+  //   if (isNaN(comm))   e.affiliateCommissionRate = 'Commission must be a number';
+  //   else if (comm < 0) e.affiliateCommissionRate = 'Commission cannot be negative';
+  //   else if (comm > 100) e.affiliateCommissionRate = 'Commission cannot exceed 100%';
+  //
+  //   if (form.mainImageUrl && !isValidHttpUrl(form.mainImageUrl))
+  //     e.mainImageUrl = 'Must be a valid URL starting with https://';
+  //
+  //   setErrors(e);
+  //   return Object.keys(e).length === 0;
+  // }, [form]);
+
+
   const validate = useCallback((): boolean => {
-    const e: FieldError = {};
+  const e: FieldError = {};
 
-    const title = form.title.trim();
-    if (!title)                e.title = 'Product title is required';
-    else if (title.length < 3) e.title = 'Title must be at least 3 characters';
-    else if (title.length > 200) e.title = 'Title must be under 200 characters';
+  // Title
+  const title = form.title.trim();
+  if (!title)                  e.title = 'Product title is required';
+  else if (title.length < 3)   e.title = 'Title must be at least 3 characters';
+  else if (title.length > 200) e.title = 'Title must be under 200 characters';
 
-    if (form.shortDescription.length > 300)
-      e.shortDescription = 'Short description must be 300 characters or fewer';
+  // Short description
+  const shortDesc = form.shortDescription.trim();
+  if (!shortDesc)
+    e.shortDescription = 'Short description is required';
+  else if (shortDesc.length > 300)
+    e.shortDescription = 'Short description must be 300 characters or fewer';
 
-    const price = Number(form.price);
-    if (!form.price)             e.price = 'Price is required';
-    else if (isNaN(price))       e.price = 'Price must be a number';
-    else if (price <= 0)         e.price = 'Price must be greater than 0';
-    else if (price > 10_000_000) e.price = 'Price seems too high — please double-check';
+  // Full description
+  if (!form.description.trim())
+    e.description = 'Full description is required';
 
-    const stock = Number(form.stockQuantity);
-    if (isNaN(stock))              e.stockQuantity = 'Stock quantity must be a number';
-    else if (stock < 0)            e.stockQuantity = 'Stock quantity cannot be negative';
-    else if (!Number.isInteger(stock)) e.stockQuantity = 'Stock quantity must be a whole number';
+  // Category
+  if (!form.categoryId)
+    e.categoryId = 'Please select a category';
 
-    const comm = Number(form.affiliateCommissionRate);
-    if (isNaN(comm))   e.affiliateCommissionRate = 'Commission must be a number';
-    else if (comm < 0) e.affiliateCommissionRate = 'Commission cannot be negative';
-    else if (comm > 100) e.affiliateCommissionRate = 'Commission cannot exceed 100%';
+  // SKU
+  if (!form.sku.trim())
+    e.sku = 'SKU is required';
 
-    if (form.mainImageUrl && !isValidHttpUrl(form.mainImageUrl))
-      e.mainImageUrl = 'Must be a valid URL starting with https://';
+  // Price
+  const price = Number(form.price);
+  if (!form.price)             e.price = 'Price is required';
+  else if (isNaN(price))       e.price = 'Price must be a number';
+  else if (price <= 0)         e.price = 'Price must be greater than 0';
+  else if (price > 10_000_000) e.price = 'Price seems too high — please double-check';
 
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }, [form]);
+  // Stock
+  const stock = Number(form.stockQuantity);
+  if (form.stockQuantity === '')  e.stockQuantity = 'Stock quantity is required';
+  else if (isNaN(stock))          e.stockQuantity = 'Stock quantity must be a number';
+  else if (stock < 0)             e.stockQuantity = 'Stock quantity cannot be negative';
+  else if (!Number.isInteger(stock)) e.stockQuantity = 'Stock quantity must be a whole number';
+
+  // Commission
+  const comm = Number(form.affiliateCommissionRate);
+  if (form.affiliateCommissionRate === '')
+    e.affiliateCommissionRate = 'Commission rate is required';
+  else if (isNaN(comm))  e.affiliateCommissionRate = 'Commission must be a number';
+  else if (comm < 0)     e.affiliateCommissionRate = 'Commission cannot be negative';
+  else if (comm > 100)   e.affiliateCommissionRate = 'Commission cannot exceed 100%';
+
+  // Main image — now truly required
+  if (!form.mainImageUrl.trim())
+    e.mainImageUrl = 'Main product image is required';
+  else if (!isValidHttpUrl(form.mainImageUrl))
+    e.mainImageUrl = 'Must be a valid URL starting with https://';
+
+  setErrors(e);
+  return Object.keys(e).length === 0;
+}, [form]);
+
+
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -640,7 +703,7 @@ export function NewProductForm({ categories }: Props) {
 
           <Field
             label="Short Description"
-            error={errors.shortDescription}
+            required error={errors.shortDescription}
             hint="Shown on product cards and search results (max 300 characters)"
           >
             <textarea
@@ -660,7 +723,9 @@ export function NewProductForm({ categories }: Props) {
             </div>
           </Field>
 
-          <Field label="Full Description" hint="Detailed product description shown on the product page. Supports plain text.">
+          <Field label="Full Description" 
+required error={errors.description}
+          hint="Detailed product description shown on the product page. Supports plain text.">
             <textarea
               className="np-input np-textarea"
               style={{ ...inputStyle(), minHeight: 140 }}
@@ -704,7 +769,7 @@ export function NewProductForm({ categories }: Props) {
           </div>
 
           <div className="np-grid-2">
-            <Field label="SKU (Stock Keeping Unit)" hint="Optional internal product code">
+            <Field required error={errors.sku} label="SKU (Stock Keeping Unit)" hint="Optional internal product code">
               <input
                 className="np-input"
                 style={inputStyle()}
@@ -842,7 +907,7 @@ export function NewProductForm({ categories }: Props) {
           {/* ── Main image ── */}
           <Field
             label="Main Product Image"
-            error={errors.mainImageUrl}
+            required error={errors.mainImageUrl}
             hint="The primary image shown on product cards. Upload a file or paste a CDN URL."
           >
             <ImageInputArea
