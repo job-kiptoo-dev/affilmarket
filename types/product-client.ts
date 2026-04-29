@@ -2,6 +2,7 @@ interface Product {
   id: string; title: string; slug: string;
   price: number; status: string;
   mainImageUrl: string | null; shortDescription: string | null;
+  stockQuantity: number;
   affiliateCommissionRate: number; adminNote: string | null;
   createdAt: string; shopName: string; categoryName: string | null;
 }
@@ -19,3 +20,22 @@ export const TABS = [
 ];
 
 
+
+// Before
+// interface Product {
+//   id: string; title: string; slug: string;
+//   price: number; status: string;
+//   mainImageUrl: string | null; shortDescription: string | null;
+//   affiliateCommissionRate: number; adminNote: string | null;
+//   createdAt: string; shopName: string; categoryName: string | null;
+// }
+//
+// // After — add stockQuantity
+// interface Product {
+//   id: string; title: string; slug: string;
+//   price: number; status: string;
+//   mainImageUrl: string | null; shortDescription: string | null;
+//   stockQuantity: number;
+//   affiliateCommissionRate: number; adminNote: string | null;
+//   createdAt: string; shopName: string; categoryName: string | null;
+// }

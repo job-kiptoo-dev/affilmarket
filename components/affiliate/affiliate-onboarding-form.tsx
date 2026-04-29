@@ -129,7 +129,7 @@ export function AffiliateOnboardingForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       // Push each validation error into RHF so fields turn red
-      result.error.errors.forEach((err: z.ZodIssue) => {
+      result.error.issues.forEach((err: z.ZodIssue) => {
         setError(err.path[0] as keyof FormData, { message: err.message });
       });
       toast.error("Please fix the errors before continuing");

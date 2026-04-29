@@ -137,7 +137,7 @@ export function VendorOnboardingForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       // Push each error into RHF so inline messages render
-      result.error.errors.forEach((err: { path: (string|number)[]; message: string }) => {
+        result.error.issues.forEach((err: z.ZodIssue) => {
         setError(err.path[0] as keyof FormData, { message: err.message });
       });
     }
