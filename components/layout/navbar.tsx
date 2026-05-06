@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
-import { ShoppingBag, Menu, X, ChevronDown, Bell, User, LogOut, LayoutDashboard, Package, DollarSign } from 'lucide-react';
+import { ShoppingBag, Menu, X, ChevronDown, Bell, User, LogOut, LayoutDashboard, Package, DollarSign, ArrowRight, ArrowRightIcon, ChevronRight } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 
 const NAV_LINKS = [
@@ -14,7 +14,7 @@ const NAV_LINKS = [
       { label: '🛒 For Buyers', desc: 'Shop the marketplace', href: '/products' },
     ],
   },
-  { label: 'Features & Pricing', href: '/pricing' },
+  { label: 'Features & Pricing', href: '#features' },
   {
     label: 'More',
     dropdown: [
@@ -515,8 +515,9 @@ export function Navbar() {
             ) : (
               /* ── Unauthenticated State ── */
               <>
-                <Link href="/orders/find" className="am-cancel-link">
-                  Cancel My Order <span style={{ fontSize: 12 }}>›</span>
+                <Link href="/products" className="am-cancel-link p-5">
+                  Explore The Products < ChevronRight  size={14} className='gray-100'/>  
+                  {/* <span style{{ fontSize: 15 }}>›</span> */}
                 </Link>
                 <div className="am-vdivider" />
                 <Link href="/login" className="am-login-btn">
@@ -526,9 +527,6 @@ export function Navbar() {
                 <Link href="/register" className="am-cta-btn">
                   Get Started
                 </Link>
-                <button className="am-lang-btn">
-                  EN <ChevronDown size={10} />
-                </button>
               </>
             )}
           </div>

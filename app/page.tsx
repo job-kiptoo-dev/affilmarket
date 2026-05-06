@@ -180,8 +180,10 @@ export default async function HomePage() {
           </div>
         )}
       </section>
+      <section id="features">
+  <HowItWorks />
+</section>
 
-      <HowItWorks />
 
       {/* Dual CTA */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px 80px' }}>

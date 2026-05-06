@@ -1,5 +1,5 @@
 import { formatKES, formatDate } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { cn} from '@/lib/utils';
 
 const statusStyles: Record<string, string> = {
   CREATED: 'bg-gray-100 text-gray-600',
@@ -53,7 +53,7 @@ export function RecentOrders({ orders, role }: RecentOrdersProps) {
               </td>
               <td className="py-3 pr-4">
                 <span className="font-medium text-gray-900 line-clamp-1 max-w-[160px]">
-                  {order.product?.title || 'N/A'}
+                  {order.productTitle}
                 </span>
               </td>
               <td className="py-3 pr-4">

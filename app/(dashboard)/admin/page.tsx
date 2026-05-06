@@ -204,7 +204,7 @@ export default async function AdminDashboardPage() {
         {(stats.pendingVendors > 0 || stats.pendingProducts > 0 || stats.pendingPayouts > 0) && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {stats.pendingVendors > 0 && (
-              <a href="/admin/users?tab=vendors&status=pending"
+              <a href="/admin/users?tab=vendors&status=pending_verification"
                 className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
                 <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
                 <div>
